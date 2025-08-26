@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TableServe - Restaurant Ordering UI</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        :root {
+            --primary-bg: #121212;
+            --primary-accent: #EB3D1E;
+            --highlight: #FDCB6E;
+            --text-main: #FFFFFF;
+            --text-placeholder: #CCCCCC;
+            --card-bg: rgba(255, 255, 255, 0.05);
+            --divider: #2C2C2C;
+            --hover-shade: #D93217;
+        }
+        body {
+            background-color: var(--primary-bg);
+            font-family: 'Inter', sans-serif;
+            color: var(--text-main);
+        }
+        .glassmorphic-card {
+            background: var(--card-bg);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid var(--divider);
+        }
+        .font-manrope { font-family: 'Manrope', sans-serif; }
+    </style>
+</head>
+<body class="antialiased">
+        <div id="app-container" class="max-w-sm mx-auto bg-primary-bg min-h-screen shadow-2xl">
+            <div id="landing-screen" class="p-4">
+                <header class="flex justify-between items-center py-4">
+                    <div>
+                        <h1 class="text-2xl font-bold font-manrope">Bella Vista</h1>
+                        <p class="text-sm text-text-placeholder">Italian, Mexican</p>
+                    </div>
+                    <img src="https://placehold.co/40x40/EB3D1E/FFFFFF?text=BV" alt="Bella Vista Logo" class="rounded-full">
+                </header>
+
+                <div class="relative my-6">
+                    <img src="https://placehold.co/400x150/EB3D1E/FFFFFF?text=50%25+OFF" alt="Offer Banner" class="rounded-2xl">
+                    <div class="absolute inset-0 bg-black/30 rounded-2xl flex flex-col justify-end p-4">
+                        <h2 class="text-xl font-bold font-manrope">50% OFF on all Pizzas!</h2>
+                        <p class="text-sm">Use code: PIZZA50</p>
+                    </div>
+                </div>
+
+                <div>
+                    <h3 class="text-lg font-semibold mb-4">Categories</h3>
+                    <div class="grid grid-cols-3 gap-4 text-center">
+                        <div class="glassmorphic-card rounded-2xl p-4">
+                            <p>Starters</p>
+                        </div>
+                        <div class="glassmorphic-card rounded-2xl p-4">
+                            <p>Mains</p>
+                        </div>
+                        <div class="glassmorphic-card rounded-2xl p-4">
+                            <p>Beverages</p>
+                        </div>
+                        <div class="glassmorphic-card rounded-2xl p-4">
+                            <p>Desserts</p>
+                        </div>
+                        <div class="glassmorphic-card rounded-2xl p-4">
+                            <p>Salads</p>
+                        </div>
+                         <div class="glassmorphic-card rounded-2xl p-4">
+                            <p>Soups</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="fixed bottom-0 left-0 right-0 p-4 max-w-sm mx-auto">
+                     <button class="w-full bg-primary-accent text-white font-bold py-4 rounded-2xl hover:bg-hover-shade transition-colors">Start Ordering</button>
+                </div>
+            </div>
+        </div>
+</body>
+</html>

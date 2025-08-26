@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Order Tracking Debug Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ccc; border-radius: 5px; }
+        .success { background-color: #d4edda; border-color: #c3e6cb; }
+        .error { background-color: #f8d7da; border-color: #f5c6cb; }
+        .info { background-color: #d1ecf1; border-color: #bee5eb; }
+        pre { background: #f8f9fa; padding: 10px; border-radius: 3px; overflow-x: auto; }
+        button { padding: 10px 20px; margin: 5px; border: none; border-radius: 3px; cursor: pointer; }
+        .btn-primary { background-color: #007bff; color: white; }
+        .btn-success { background-color: #28a745; color: white; }
+        .btn-danger { background-color: #dc3545; color: white; }
+    </style>
+</head>
+<body>
+    <h1>TableServe Order Tracking Debug Test</h1>
+    
+    <div class="test-section info">
+        <h2>Test Order Creation and Tracking Flow</h2>
+        <p>This test simulates the complete order flow to debug the tracking issue.</p>
+    </div>
+
+    <div class="test-section">
+        <h3>Step 1: Create Test Order</h3>
+        <button class="btn-primary" onclick="createTestOrder()">Create Test Order</button>
+        <div id="order-creation-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h3>Step 2: Store Recent Order ID</h3>
+        <button class="btn-primary" onclick="storeRecentOrder()">Store Recent Order ID</button>
+        <div id="recent-order-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h3>Step 3: Test Order Retrieval</h3>
+        <button class="btn-success" onclick="testOrderRetrieval()">Test Order Retrieval</button>
+        <div id="retrieval-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h3>Step 4: Navigate to Tracking</h3>
+        <button class="btn-success" onclick="navigateToTracking()">Open Order Tracking Page</button>
+        <div id="navigation-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h3>Step 5: Cleanup</h3>
+        <button class="btn-danger" onclick="cleanupTest()">Cleanup Test Data</button>
+        <div id="cleanup-result"></div>
+    </div>
+
+    <script>
+        let testOrderData = null;
+        let testRestaurantId = 'test-restaurant-123';
+        let testTableId = 'test-table-456';
+        let testUserId = 'test-user-789';
+
+        function logResult(elementId, message, isSuccess = true) {
+            const element = document.getElementById(elementId);
+            element.innerHTML = `<pre class="${isSuccess ? 'success' : 'error'}">${message}</pre>`;
+        }
+
+        function createTestOrder() {
+            try {
+                testOrderData = {
+                    orderId: `TS${Date.now()}${Math.random().toString(36).substr(2, 5).toUpperCase()}`,
+                    restaurantId: testRestaurantId,
+                    userId: testUserId,
+                    tableId: testTableId,
+                    items: [
+                        { id: '1', name: 'Test Burger', price: 250, quantity: 2 },
+                        { id: '2', name: 'Test Fries', price: 100, quantity: 1 }
+                    ],
+                    subtotal: 600,
+                    taxes: 60,
+                    total: 660,
+                    paymentMethod: 'digital',
+                    status: 'preparing',
+                    createdAt: new Date().toISOString(),
+                    estimatedTime: 25
+                };
+
+                // Store order in restaurant orders (simulate OrderProcessingService)
+                const restaurantOrders = JSON.parse(localStorage.getItem(`restaurant_orders_${testRestaurantId}`) || '[]');
+                restaurantOrders.unshift(testOrderData);
+                localStorage.setItem(`restaurant_orders_${testRestaurantId}`, JSON.stringify(restaurantOrders));
+
+                logResult('order-creation-result', 
+                    `✅ Test order created successfully!
+Order ID: ${testOrderData.orderId}
+Restaurant ID: ${testRestaurantId}
+Items: ${testOrderData.items.length}
+Total: ₹${testOrderData.total}
+Status: ${testOrderData.status}
+
+Stored in: restaurant_orders_${testRestaurantId}`);
+            } catch (error) {
+                logResult('order-creation-result', `❌ Error creating test order: ${error.message}`, false);
+            }
+        }
+
+        function storeRecentOrder() {
+            try {
+                if (!testOrderData) {
+                    throw new Error('Please create test order first');
+                }
+
+                // Store recent order ID (simulate CheckoutScreen)
+                const recentOrderKey = `recent_order_${testRestaurantId}_${testTableId}_${testUserId}`;
+                localStorage.setItem(recentOrderKey, testOrderData.orderId);
+
+                logResult('recent-order-result', 
+                    `✅ Recent order ID stored successfully!
+Key: ${recentOrderKey}
+Order ID: ${testOrderData.orderId}
+
+This simulates what CheckoutScreen does after successful order creation.`);
+            } catch (error) {
+                logResult('recent-order-result', `❌ Error storing recent order: ${error.message}`, false);
+            }
+        }
+
+        function testOrderRetrieval() {
+            try {
+                if (!testOrderData) {
+                    throw new Error('Please create test order first');
+                }
+
+                // Test retrieval (simulate OrderTrackingScreen logic)
+                const recentOrderKey = `recent_order_${testRestaurantId}_${testTableId}_${testUserId}`;
+                const recentOrderId = localStorage.getItem(recentOrderKey);
+
+                if (!recentOrderId) {
+                    throw new Error('Recent order ID not found');
+                }
+
+                // Test getOrderById simulation
+                const restaurantOrders = JSON.parse(localStorage.getItem(`restaurant_orders_${testRestaurantId}`) || '[]');
+                const foundOrder = restaurantOrders.find(o => o.orderId === recentOrderId || o.id === recentOrderId);
+
+                if (foundOrder) {
+                    logResult('retrieval-result', 
+                        `✅ Order retrieval successful!
+Retrieved Order ID: ${recentOrderId}
+Found Order: ${foundOrder.orderId}
+Status: ${foundOrder.status}
+Items: ${foundOrder.items.length}
+Total: ₹${foundOrder.total}
+Created: ${new Date(foundOrder.createdAt).toLocaleString()}
+
+✅ The order tracking should work now!`);
+                } else {
+                    throw new Error(`Order not found with ID: ${recentOrderId}`);
+                }
+            } catch (error) {
+                logResult('retrieval-result', `❌ Error retrieving order: ${error.message}`, false);
+            }
+        }
+
+        function navigateToTracking() {
+            try {
+                if (!testOrderData) {
+                    throw new Error('Please create test order first');
+                }
+
+                const trackingUrl = `/tableserve/restaurant/${testRestaurantId}/table/${testTableId}/user/${testUserId}/tracking`;
+                const fullUrl = window.location.origin + trackingUrl;
+                
+                logResult('navigation-result', 
+                    `✅ Tracking URL generated:
+${trackingUrl}
+
+Full URL: ${fullUrl}
+
+Click the link below to test order tracking:
+<a href="${trackingUrl}" target="_blank" style="display: inline-block; padding: 10px 15px; background: #007bff; color: white; text-decoration: none; border-radius: 3px; margin-top: 10px;">🔗 Open Order Tracking</a>
+
+The page should now show real order data instead of "Order Not Found"`);
+            } catch (error) {
+                logResult('navigation-result', `❌ Error generating tracking URL: ${error.message}`, false);
+            }
+        }
+
+        function cleanupTest() {
+            try {
+                // Remove test data
+                localStorage.removeItem(`restaurant_orders_${testRestaurantId}`);
+                localStorage.removeItem(`recent_order_${testRestaurantId}_${testTableId}_${testUserId}`);
+                
+                testOrderData = null;
+                
+                logResult('cleanup-result', 
+                    `✅ Test data cleaned up successfully!
+Removed:
+- restaurant_orders_${testRestaurantId}
+- recent_order_${testRestaurantId}_${testTableId}_${testUserId}
+
+Ready for new tests.`);
+                
+                // Clear other result divs
+                ['order-creation-result', 'recent-order-result', 'retrieval-result', 'navigation-result'].forEach(id => {
+                    document.getElementById(id).innerHTML = '';
+                });
+            } catch (error) {
+                logResult('cleanup-result', `❌ Error during cleanup: ${error.message}`, false);
+            }
+        }
+
+        // Show current localStorage state on load
+        window.addEventListener('load', function() {
+            console.log('=== Current localStorage state ===');
+            for (let key in localStorage) {
+                if (key.includes('order') || key.includes('recent')) {
+                    console.log(key, localStorage.getItem(key));
+                }
+            }
+        });
+    </script>
+</body>
+</html>
