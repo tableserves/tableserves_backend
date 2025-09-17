@@ -42,7 +42,7 @@
   "type": "commonjs",
   "engines": {
     "node": "16.20.2",
-    "npm": ">=8.0.0"
+    "npm": "~8.0.0"
   },
   "dependencies": {
     "bcrypt": "^5.1.1",
