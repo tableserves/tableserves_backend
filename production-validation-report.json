@@ -1,0 +1,119 @@
+{
+  "timestamp": "2025-09-17T06:13:34.818Z",
+  "environment": "production",
+  "validation": {
+    "required": {
+      "allValid": true,
+      "results": [
+        {
+          "name": "NODE_ENV",
+          "status": "valid",
+          "message": "OK"
+        },
+        {
+          "name": "PORT",
+          "status": "valid",
+          "message": "OK"
+        },
+        {
+          "name": "MONGODB_URI",
+          "status": "valid",
+          "message": "OK"
+        },
+        {
+          "name": "JWT_SECRET",
+          "status": "valid",
+          "message": "OK"
+        },
+        {
+          "name": "JWT_REFRESH_SECRET",
+          "status": "valid",
+          "message": "OK"
+        },
+        {
+          "name": "CLOUDINARY_CLOUD_NAME",
+          "status": "valid",
+          "message": "OK"
+        },
+        {
+          "name": "CLOUDINARY_API_KEY",
+          "status": "valid",
+          "message": "OK"
+        },
+        {
+          "name": "CLOUDINARY_API_SECRET",
+          "status": "valid",
+          "message": "OK"
+        },
+        {
+          "name": "SMTP_USER",
+          "status": "valid",
+          "message": "OK"
+        },
+        {
+          "name": "SMTP_PASS",
+          "status": "valid",
+          "message": "OK"
+        },
+        {
+          "name": "FRONTEND_URL",
+          "status": "valid",
+          "message": "OK"
+        },
+        {
+          "name": "RAZORPAY_KEY_ID",
+          "status": "valid",
+          "message": "OK"
+        },
+        {
+          "name": "RAZORPAY_KEY_SECRET",
+          "status": "valid",
+          "message": "OK"
+        }
+      ]
+    },
+    "optional": [
+      {
+        "name": "REDIS_URL",
+        "status": "valid",
+        "message": "OK"
+      },
+      {
+        "name": "ADMIN_PANEL_URL",
+        "status": "valid",
+        "message": "OK"
+      },
+      {
+        "name": "API_BASE_URL",
+        "status": "valid",
+        "message": "OK"
+      }
+    ],
+    "security": {
+      "allPassed": false,
+      "results": [
+        {
+          "name": "JWT Secret Strength",
+          "passed": false,
+          "message": "JWT_SECRET has low entropy (3.72). Consider using a more random secret."
+        },
+        {
+          "name": "Production URLs",
+          "passed": true,
+          "message": "All URLs are properly configured for production"
+        },
+        {
+          "name": "Gmail Configuration",
+          "passed": true,
+          "message": "Email configuration looks good"
+        }
+      ]
+    }
+  },
+  "summary": {
+    "requiredValid": true,
+    "securityPassed": false,
+    "totalChecks": 19,
+    "passedChecks": 18
+  }
+}

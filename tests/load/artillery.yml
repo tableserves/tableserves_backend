@@ -1,0 +1,325 @@
+# Artillery.js Load Testing Configuration for TableServe Production
+# Comprehensive testing scenarios for high-load production environments
+
+config:
+  target: '{{ $processEnvironment.TARGET_URL || "http://localhost:5000" }}'
+  phases:
+    # Warm-up phase
+    - duration: 120
+      arrivalRate: 5
+      name: "Warm-up"
+    
+    # Gradual ramp-up
+    - duration: 300
+      arrivalRate: 10
+      rampTo: 50
+      name: "Ramp-up"
+    
+    # Sustained load
+    - duration: 600
+      arrivalRate: 50
+      name: "Sustained Load"
+    
+    # Peak load
+    - duration: 300
+      arrivalRate: 100
+      name: "Peak Load"
+    
+    # Stress test
+    - duration: 180
+      arrivalRate: 150
+      name: "Stress Test"
+    
+    # Cool down
+    - duration: 120
+      arrivalRate: 10
+      name: "Cool Down"
+  
+  defaults:
+    headers:
+      'Content-Type': 'application/json'
+      'User-Agent': 'Artillery Load Test'
+  
+  # Performance thresholds
+  ensure:
+    # Response time thresholds
+    - p95: 2000  # 95% of requests should complete within 2 seconds
+    - p99: 5000  # 99% of requests should complete within 5 seconds
+    - median: 500  # Median response time should be under 500ms
+    
+    # Error rate thresholds
+    - maxErrorRate: 1  # Error rate should be less than 1%
+  
+  # WebSocket configuration for real-time testing
+  ws:
+    autoconnect: false
+  
+  # Environment variables for dynamic configuration
+  environments:
+    production:
+      target: 'https://api.tableserve.app'
+      phases:
+        - duration: 300
+          arrivalRate: 20
+          rampTo: 100
+        - duration: 900
+          arrivalRate: 100
+        - duration: 300
+          arrivalRate: 200
+    
+    staging:
+      target: 'https://staging-api.tableserve.app'
+      phases:
+        - duration: 180
+          arrivalRate: 10
+          rampTo: 30
+        - duration: 300
+          arrivalRate: 30
+
+  # Payload definitions
+  payload:
+    path: "./test-data.csv"
+    fields:
+      - "email"
+      - "password"
+      - "restaurantId"
+      - "customerId"
+    
+scenarios:
+  # Authentication flow test
+  - name: "Authentication Flow"
+    weight: 20
+    flow:
+      - post:
+          url: "/api/v1/auth/login"
+          json:
+            email: "{{ email }}"
+            password: "{{ password }}"
+          capture:
+            - json: "$.data.token"
+              as: "authToken"
+      
+      - get:
+          url: "/api/v1/auth/profile"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+      
+      - post:
+          url: "/api/v1/auth/logout"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+
+  # Order creation and tracking flow
+  - name: "Order Lifecycle"
+    weight: 40
+    flow:
+      # Login first
+      - post:
+          url: "/api/v1/auth/login"
+          json:
+            email: "customer@test.com"
+            password: "testpassword"
+          capture:
+            - json: "$.data.token"
+              as: "authToken"
+      
+      # Get restaurant menu
+      - get:
+          url: "/api/v1/restaurants/{{ restaurantId }}/menu"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          capture:
+            - json: "$.data[0]._id"
+              as: "menuItemId"
+      
+      # Create order
+      - post:
+          url: "/api/v1/orders"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          json:
+            restaurantId: "{{ restaurantId }}"
+            items:
+              - menuItemId: "{{ menuItemId }}"
+                quantity: 2
+                price: 12.99
+            customer:
+              name: "Test Customer"
+              phone: "+1234567890"
+              email: "customer@test.com"
+            tableNumber: "T-{{ $randomInt(1, 20) }}"
+          capture:
+            - json: "$.data._id"
+              as: "orderId"
+      
+      # Get order details
+      - get:
+          url: "/api/v1/orders/{{ orderId }}"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+      
+      # Update order status (simulate restaurant workflow)
+      - patch:
+          url: "/api/v1/orders/{{ orderId }}/status"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          json:
+            status: "confirmed"
+            notes: "Order confirmed by restaurant"
+
+  # Real-time WebSocket testing
+  - name: "Real-time Order Tracking"
+    weight: 20
+    flow:
+      # Establish WebSocket connection
+      - ws:
+          url: "/socket.io/?transport=websocket"
+          subprotocols:
+            - "websocket"
+      
+      # Authenticate socket connection
+      - ws:
+          send:
+            event: "authenticate"
+            data:
+              token: "{{ authToken }}"
+      
+      # Join order tracking room
+      - ws:
+          send:
+            event: "join_room"
+            data:
+              roomType: "order"
+              roomId: "{{ orderId }}"
+      
+      # Listen for order updates
+      - ws:
+          receive:
+            event: "order_updated"
+      
+      # Send heartbeat
+      - ws:
+          send:
+            event: "ping"
+            data: "{{ $timestamp }}"
+      
+      # Disconnect
+      - ws:
+          close: true
+
+  # Restaurant dashboard access
+  - name: "Restaurant Dashboard"
+    weight: 15
+    flow:
+      # Restaurant owner login
+      - post:
+          url: "/api/v1/auth/login"
+          json:
+            email: "owner@restaurant.com"
+            password: "ownerpassword"
+          capture:
+            - json: "$.data.token"
+              as: "ownerToken"
+      
+      # Get live orders
+      - get:
+          url: "/api/v1/orders/live"
+          headers:
+            Authorization: "Bearer {{ ownerToken }}"
+          qs:
+            status: "pending"
+      
+      # Get order history
+      - get:
+          url: "/api/v1/orders/history"
+          headers:
+            Authorization: "Bearer {{ ownerToken }}"
+          qs:
+            page: 1
+            limit: 20
+      
+      # Get analytics
+      - get:
+          url: "/api/v1/analytics/dashboard"
+          headers:
+            Authorization: "Bearer {{ ownerToken }}"
+
+  # API health and metrics
+  - name: "Health Monitoring"
+    weight: 5
+    flow:
+      # Health check
+      - get:
+          url: "/health"
+      
+      # Metrics endpoint
+      - get:
+          url: "/metrics"
+      
+      # API info
+      - get:
+          url: "/api/v1/info"
+
+  # Database intensive operations
+  - name: "Analytics and Reporting"
+    weight: 10
+    flow:
+      # Admin login
+      - post:
+          url: "/api/v1/auth/login"
+          json:
+            email: "admin@tableserve.com"
+            password: "adminpassword"
+          capture:
+            - json: "$.data.token"
+              as: "adminToken"
+      
+      # Generate analytics report
+      - post:
+          url: "/api/v1/analytics/generate"
+          headers:
+            Authorization: "Bearer {{ adminToken }}"
+          json:
+            entityType: "restaurant"
+            entityId: "{{ restaurantId }}"
+            period: "day"
+            date: "{{ $isoTimestamp }}"
+      
+      # Export data
+      - get:
+          url: "/api/v1/reports/export"
+          headers:
+            Authorization: "Bearer {{ adminToken }}"
+          qs:
+            format: "json"
+            type: "orders"
+            dateFrom: "{{ $isoTimestamp }}"
+            dateTo: "{{ $isoTimestamp }}"
+
+# Custom functions for data generation
+before:
+  flow:
+    # Setup test data
+    - log: "Starting load test for TableServe Production API"
+
+after:
+  flow:
+    # Cleanup test data
+    - log: "Load test completed for TableServe Production API"
+
+# Plugins for enhanced reporting
+plugins:
+  # Metrics collection
+  metrics-by-endpoint:
+    useOnlyRequestNames: true
+  
+  # Publish metrics to external systems
+  publish-metrics:
+    type: "statsd"
+    host: "{{ $processEnvironment.STATSD_HOST || 'localhost' }}"
+    port: 8125
+    prefix: "artillery.tableserve"
+  
+  # Custom reporter for detailed analysis
+  custom-reporter:
+    outputFile: "./load-test-results.json"
