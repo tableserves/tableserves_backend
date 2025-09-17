@@ -1,7 +1,7 @@
 const Plan = require('../models/Plan');
 const User = require('../models/User');
 const catchAsync = require('../utils/catchAsync');
-const APIError = require('../utils/APIError');
+const { APIError } = require('../utils/apiError');
 const logger = require('../utils/logger');
 
 class PlanController {

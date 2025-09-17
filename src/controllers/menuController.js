@@ -5,7 +5,7 @@ const Restaurant = require('../models/Restaurant');
 const Zone = require('../models/Zone');
 const ZoneShop = require('../models/ZoneShop');
 const Upload = require('../models/Upload');
-const { APIError } = require('../middleware/errorHandler');
+const { APIError } = require('../utils/apiError');
 const catchAsync = require('../utils/catchAsync');
 const { UploadService } = require('../services/uploadService');
 
