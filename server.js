@@ -410,6 +410,12 @@ if (missingRequiredRoutes.length > 0) {
   }
 }
 
+// Add temporary redirect for old menu routes
+app.use('/api/v1/menu/*', (req, res) => {
+  const newPath = req.originalUrl.replace('/api/v1/menu/', '/api/v1/menus/');
+  res.redirect(307, newPath);
+});
+
 // Mount routes with enhanced error handling
 const apiBasePath = '/api/v1';
 let mountSuccessCount = 0;
