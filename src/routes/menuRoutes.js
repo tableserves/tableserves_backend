@@ -129,18 +129,7 @@ router.get('/public/:ownerType/:ownerId/categories',
   MenuController.getCategories || ((req, res) => res.status(501).json({ success: false, error: { message: 'Controller method not implemented' } }))
 );
 
-// Public routes (with authentication required)
-addValidationMiddleware(
-  router,
-  'get',
-  '/public/:ownerType/:ownerId',
-  [
-    authenticate,
-    ...getValidation('validateObjectId', 'ownerId'),
-    handleValidation
-  ],
-  MenuController.getPublicMenu || ((req, res) => res.status(501).json({ success: false, error: { message: 'Controller method not implemented' } }))
-);
+
 
 addValidationMiddleware(
   router,
