@@ -5,7 +5,7 @@ const MenuItem = require('../models/MenuItem');
 const Restaurant = require('../models/Restaurant');
 const Zone = require('../models/Zone');
 const ZoneShop = require('../models/ZoneShop');
-const APIError = require('../utils/APIError');
+const APIError = require('../utils/apiError');
 const logger = require('../utils/logger');
 
 /**
