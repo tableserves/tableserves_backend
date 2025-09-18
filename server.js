@@ -319,7 +319,7 @@ const routeConfigs = [
   { name: 'auth', path: './src/routes/authRoutes', mount: '/auth', required: true },
   { name: 'business-setup', path: './src/routes/businessSetupRoutes', mount: '/business-setup', required: false },
   { name: 'restaurants', path: './src/routes/restaurantRoutes', mount: '/restaurants', required: true },
-  { name: 'menu', path: './src/routes/menuRoutes', mount: '/menu', required: true },
+  { name: 'menu', path: './src/routes/menuRoutes', mount: '/menus', required: true },
   { name: 'orders', path: './src/routes/orderRoutes', mount: '/orders', required: true },
   { name: 'images', path: './src/routes/imageRoutes', mount: '/images', required: false },
   { name: 'admin', path: './src/routes/adminRoutes', mount: '/admin', required: true },
