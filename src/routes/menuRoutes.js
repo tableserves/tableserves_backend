@@ -100,6 +100,21 @@ const addValidationMiddleware = (router, method, path, middlewares, controllerMe
 };
 
 // Truly public routes (no authentication required)
+
+// @route   GET /api/v1/menu/public/restaurant/:restaurantId
+// @desc    Get complete menu structure for a specific restaurant
+// @access  Public
+router.get('/public/restaurant/:restaurantId',
+  ...getValidation('validateObjectId', 'restaurantId'),
+  handleValidation,
+  (req, res, next) => {
+    req.params.ownerType = 'restaurant';
+    req.params.ownerId = req.params.restaurantId;
+    next();
+  },
+  MenuController.getPublicMenu || ((req, res) => res.status(501).json({ success: false, error: { message: 'Controller method not implemented' } }))
+);
+
 // @route   GET /api/v1/menu/:ownerType/:ownerId
 // @desc    Get complete menu structure for public viewing
 // @access  Public
