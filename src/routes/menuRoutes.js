@@ -151,7 +151,6 @@ addValidationMiddleware(
   'get',
   '/public/items/:itemId',
   [
-    authenticate,
     ...getValidation('validateObjectId', 'itemId'),
     handleValidation
   ],
