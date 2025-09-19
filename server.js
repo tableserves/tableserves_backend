@@ -56,7 +56,8 @@ const corsOptions = {
     if (process.env.NODE_ENV === 'production') {
       const allowedOrigins = [
         process.env.FRONTEND_URL,
-        process.env.ADMIN_PANEL_URL
+        process.env.ADMIN_PANEL_URL,
+        'https://tableserves.com'
       ].filter(Boolean);
       
       if (!origin || allowedOrigins.includes(origin)) {
@@ -71,7 +72,8 @@ const corsOptions = {
         'http://127.0.0.1:5173',
         'http://127.0.0.1:3000',
         'http://localhost:8080',
-        'http://localhost:4173'
+        'http://localhost:4173',
+        'https://tableserves.com'
       ];
       
       if (!origin || devOrigins.includes(origin)) {
@@ -410,11 +412,8 @@ if (missingRequiredRoutes.length > 0) {
   }
 }
 
-// Add temporary redirect for old menu routes
-app.use('/api/v1/menu/*', (req, res) => {
-  const newPath = req.originalUrl.replace('/api/v1/menu/', '/api/v1/menus/');
-  res.redirect(307, newPath);
-});
+// Direct access to menu routes without redirects
+logger.info('Menu routes configured for direct access without redirects');
 
 // Mount routes with enhanced error handling
 const apiBasePath = '/api/v1';
