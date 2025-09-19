@@ -144,6 +144,29 @@ router.get('/public/:ownerType/:ownerId/categories',
   MenuController.getCategories || ((req, res) => res.status(501).json({ success: false, error: { message: 'Controller method not implemented' } }))
 );
 
+// @route   GET /api/v1/menu/public/:ownerType/:ownerId/modifiers
+// @desc    Get modifiers for public viewing (customer-facing menu)
+// @access  Public
+router.get('/public/:ownerType/:ownerId/modifiers',
+  ...getValidation('validateObjectId', 'ownerId'),
+  handleValidation,
+  MenuController.getPublicModifiers || ((req, res) => res.status(501).json({ success: false, error: { message: 'Controller method not implemented' } }))
+);
+
+// @route   GET /api/v1/menu/public/shop/:shopId/modifiers
+// @desc    Get shop modifiers for public viewing
+// @access  Public
+router.get('/public/shop/:shopId/modifiers',
+  param('shopId').isMongoId().withMessage('Invalid shop ID format'),
+  handleValidation,
+  (req, res) => {
+    // Convert shopId to ownerId and set ownerType
+    req.params.ownerType = 'shop';
+    req.params.ownerId = req.params.shopId;
+    return MenuController.getPublicModifiers(req, res);
+  }
+);
+
 // @route   GET /api/v1/menu/public/items/:itemId
 // @desc    Get public menu item details
 // @access  Public (no authentication required)

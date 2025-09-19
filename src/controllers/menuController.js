@@ -84,6 +84,46 @@ class MenuController {
   }
 
   // Public Methods
+  static getPublicModifiers = catchAsync(async (req, res) => {
+    const { ownerType, ownerId } = req.params;
+    
+    // Build query based on owner type
+    let query = {};
+    switch (ownerType) {
+      case 'restaurant':
+        query.restaurantId = ownerId;
+        break;
+      case 'zone':
+        query.zoneId = ownerId;
+        break;
+      case 'shop':
+        query.shopId = ownerId;
+        break;
+      default:
+        throw new APIError('Invalid owner type', 400);
+    }
+    
+    const modifiers = await Modifier.find(query).sort('name');
+
+    const transformedModifiers = modifiers.map(modifier => ({
+      id: modifier._id,
+      name: modifier.name,
+      type: modifier.type,
+      required: modifier.required,
+      options: modifier.options,
+      minSelections: modifier.minSelections,
+      maxSelections: modifier.maxSelections,
+      menuItems: modifier.menuItems,
+      createdAt: modifier.createdAt,
+      updatedAt: modifier.updatedAt
+    }));
+
+    res.status(200).json({
+      success: true,
+      data: transformedModifiers
+    });
+  });
+
   static getPublicMenu = catchAsync(async (req, res) => {
     const { ownerType, ownerId } = req.params;
     
