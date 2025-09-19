@@ -99,7 +99,7 @@ const addValidationMiddleware = (router, method, path, middlewares, controllerMe
   }
 };
 
-// Truly public routes (no authentication required)
+// 🟢 PUBLIC ROUTES FIRST (no authentication required)
 
 // @route   GET /api/v1/menu/public/restaurant/:restaurantId
 // @desc    Get complete menu structure for a specific restaurant
@@ -115,10 +115,10 @@ router.get('/public/restaurant/:restaurantId',
   MenuController.getPublicMenu || ((req, res) => res.status(501).json({ success: false, error: { message: 'Controller method not implemented' } }))
 );
 
-// @route   GET /api/v1/menu/:ownerType/:ownerId
+// @route   GET /api/v1/menu/public/:ownerType/:ownerId
 // @desc    Get complete menu structure for public viewing
 // @access  Public
-router.get('/:ownerType/:ownerId',
+router.get('/public/:ownerType/:ownerId',
   ...getValidation('validateObjectId', 'ownerId'),
   handleValidation,
   MenuController.getPublicMenu || ((req, res) => res.status(501).json({ success: false, error: { message: 'Controller method not implemented' } }))
@@ -144,8 +144,9 @@ router.get('/public/:ownerType/:ownerId/categories',
   MenuController.getCategories || ((req, res) => res.status(501).json({ success: false, error: { message: 'Controller method not implemented' } }))
 );
 
-
-
+// @route   GET /api/v1/menu/public/items/:itemId
+// @desc    Get public menu item details
+// @access  Public (no authentication required)
 addValidationMiddleware(
   router,
   'get',
@@ -156,6 +157,8 @@ addValidationMiddleware(
   ],
   MenuController.getPublicMenuItem || ((req, res) => res.status(501).json({ success: false, error: { message: 'Controller method not implemented' } }))
 );
+
+// 🔒 PROTECTED ROUTES BELOW - Apply authentication middleware after all public routes
 
 // Create a protected router for authenticated routes
 const protectedRouter = express.Router();
@@ -184,7 +187,7 @@ protectedRouter.use((req, res, next) => {
   });
 });
 
-// Mount the protected router under the main router
+// Mount the protected router under the main router AFTER defining all public routes
 router.use(protectedRouter);
 
 // Category Management Routes

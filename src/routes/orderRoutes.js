@@ -157,6 +157,17 @@ router.post('/',
 );
 
 /**
+ * @route POST /api/v1/orders/anonymous
+ * @desc Create anonymous order from QR code without authentication
+ * @access Public
+ */
+router.post('/anonymous',
+  ValidationRules.createOrder,
+  handleValidation,
+  wrapAsync(createOrder, 'createAnonymousOrder')
+);
+
+/**
  * @route GET /api/v1/orders/track/:orderNumber
  * @desc Get order by order number for customer tracking
  * @access Public (requires customer phone for verification)
