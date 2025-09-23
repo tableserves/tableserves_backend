@@ -167,6 +167,34 @@ router.get('/public/shop/:shopId/modifiers',
   }
 );
 
+// @route   GET /api/v1/menu/public/restaurant/:restaurantId/modifiers
+// @desc    Get restaurant modifiers for public viewing
+// @access  Public
+router.get('/public/restaurant/:restaurantId/modifiers',
+  param('restaurantId').isMongoId().withMessage('Invalid restaurant ID format'),
+  handleValidation,
+  (req, res) => {
+    // Convert restaurantId to ownerId and set ownerType
+    req.params.ownerType = 'restaurant';
+    req.params.ownerId = req.params.restaurantId;
+    return MenuController.getPublicModifiers(req, res);
+  }
+);
+
+// @route   GET /api/v1/menu/public/restaurant/restaurant/:restaurantId/modifiers
+// @desc    Get restaurant modifiers for public viewing (alternative URL format)
+// @access  Public
+router.get('/public/restaurant/restaurant/:restaurantId/modifiers',
+  param('restaurantId').isMongoId().withMessage('Invalid restaurant ID format'),
+  handleValidation,
+  (req, res) => {
+    // Convert restaurantId to ownerId and set ownerType
+    req.params.ownerType = 'restaurant';
+    req.params.ownerId = req.params.restaurantId;
+    return MenuController.getPublicModifiers(req, res);
+  }
+);
+
 // @route   GET /api/v1/menu/public/items/:itemId
 // @desc    Get public menu item details
 // @access  Public (no authentication required)
