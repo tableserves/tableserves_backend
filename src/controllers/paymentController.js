@@ -211,7 +211,7 @@ class PaymentController {
     let razorpayOrder;
     try {
       const orderData = {
-        amount: totalAmount * 100, // Amount in paise
+        amount: totalAmount * 100, // Convert rupees to paise (₹353 = 35300 paise)
         currency: plan.currency,
         receipt: receipt,
         notes: {

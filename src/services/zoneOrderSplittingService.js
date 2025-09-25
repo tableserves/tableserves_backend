@@ -18,7 +18,7 @@ const mongoose = require('mongoose');
  * - Improved order ID generation and traceability
  */
 class ZoneOrderSplittingService {
-  
+
   /**
    * Process zone order with enhanced splitting logic
    * @param {Object} orderData - Complete order data
@@ -34,7 +34,7 @@ class ZoneOrderSplittingService {
 
       // Use the new MultiShopOrderTrackingService for enhanced functionality
       const result = await MultiShopOrderTrackingService.createMultiShopZoneOrder(orderData);
-      
+
       return {
         success: result.success,
         mainOrder: result.mainOrder,
@@ -44,13 +44,13 @@ class ZoneOrderSplittingService {
         orderNumber: result.orderNumber,
         estimatedTime: result.estimatedTime
       };
-      
+
     } catch (error) {
       logger.error('Enhanced zone order processing failed, falling back to legacy method', {
         error: error.message,
         zoneId: orderData.zoneId
       });
-      
+
       // Fallback to legacy implementation for backward compatibility
       return await this.processZoneOrderLegacy(orderData);
     }
@@ -81,21 +81,21 @@ class ZoneOrderSplittingService {
 
       // Group items by shop
       const shopGroups = await this.groupItemsByShop(items, zoneId);
-      
+
       if (shopGroups.length === 0) {
         throw new APIError('No valid shops found for the ordered items', 400);
       }
 
       // Generate main order number with unique code for traceability
       const { orderNumber: mainOrderNumber, uniqueCode } = await this.generateZoneOrderNumber();
-      
+
       console.log('🏢 Zone Order Number Generation:', {
         mainOrderNumber,
         uniqueCode,
         format: 'ZN + DD + XXX',
         traceabilityNote: `Shop orders will use ${uniqueCode} as prefix for traceability`
       });
-      
+
       // Use legacy order type for backward compatibility
       const mainOrder = new Order({
         orderNumber: mainOrderNumber,
@@ -128,14 +128,14 @@ class ZoneOrderSplittingService {
       for (const shopGroup of shopGroups) {
         // Generate shop order number with traceability to main order
         const shopOrderNumber = await this.generateShopOrderNumber(uniqueCode);
-        
+
         console.log('🏪 Shop Order Number Generated:', {
           shopOrderNumber,
           parentUniqueCode: uniqueCode,
           format: 'XXX + DD + YYY',
           traceabilityNote: `Can be traced back to ${mainOrderNumber} using code ${uniqueCode}`
         });
-        
+
         // Calculate shop-specific pricing
         const shopSubtotal = shopGroup.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
         const shopTaxAmount = shopSubtotal * (pricing.tax.rate || 0);
@@ -231,9 +231,9 @@ class ZoneOrderSplittingService {
     const shopGroups = new Map();
 
     // Get all shops in the zone first
-    const zoneShops = await ZoneShop.find({ 
-      zoneId: zoneId, 
-      status: 'active' 
+    const zoneShops = await ZoneShop.find({
+      zoneId: zoneId,
+      status: 'active'
     }).select('_id name settings.estimatedPreparationTime');
 
     const shopIds = zoneShops.map(shop => shop._id.toString());
@@ -243,14 +243,14 @@ class ZoneOrderSplittingService {
     for (const item of items) {
       // Find the menu item to get its shopId
       const menuItem = await MenuItem.findById(item.menuItemId).select('shopId name');
-      
+
       if (!menuItem || !menuItem.shopId) {
         logger.warn(`Item ${item.name} not found or doesn't belong to any shop`);
         continue;
       }
 
       const shopId = menuItem.shopId.toString();
-      
+
       // Check if this shop is in the zone
       if (!shopIds.includes(shopId)) {
         logger.warn(`Item ${item.name} belongs to shop ${shopId} which is not in zone ${zoneId}`);
@@ -283,7 +283,7 @@ class ZoneOrderSplittingService {
     const dayCode = new Date().getDate().toString().padStart(2, '0'); // DD format (01-31)
     const uniqueCode = Math.random().toString(36).substr(2, 3).toUpperCase(); // XXX - 3 unique chars
     const orderNumber = `${prefix}${dayCode}${uniqueCode}`;
-    
+
     return {
       orderNumber,
       uniqueCode // This will be used for shop orders
@@ -430,21 +430,21 @@ class ZoneOrderSplittingService {
 
       // Use the new MultiShopOrderTrackingService for enhanced functionality
       const result = await MultiShopOrderTrackingService.updateShopOrderStatus(
-        shopOrderId, 
-        newStatus, 
-        updatedBy, 
+        shopOrderId,
+        newStatus,
+        updatedBy,
         additionalData
       );
-      
+
       return result.shopOrder;
-      
+
     } catch (error) {
       logger.error('Enhanced shop order status update failed, falling back to legacy method', {
         error: error.message,
         shopOrderId,
         newStatus
       });
-      
+
       // Fallback to legacy implementation
       return await this.updateShopOrderStatusLegacy(shopOrderId, newStatus, updatedBy);
     }
@@ -472,7 +472,7 @@ class ZoneOrderSplittingService {
 
       if (mainOrder) {
         await this.syncMainOrderStatus(mainOrder);
-        
+
         // Notify customer of status change
         await this.notifyCustomer(mainOrder.customer, mainOrder);
       }
@@ -505,16 +505,16 @@ class ZoneOrderSplittingService {
         await mainOrder.save();
         return;
       }
-      
+
       // Fallback to legacy sync
       return await this.syncMainOrderStatusLegacy(mainOrder);
-      
+
     } catch (error) {
       logger.error('Enhanced main order sync failed, using legacy method', {
         mainOrderId: mainOrder._id,
         error: error.message
       });
-      
+
       return await this.syncMainOrderStatusLegacy(mainOrder);
     }
   }
@@ -526,9 +526,9 @@ class ZoneOrderSplittingService {
   static async syncMainOrderStatusLegacy(mainOrder) {
     try {
       console.log('🔄 Starting main order status sync for:', mainOrder.orderNumber);
-      
+
       const shopOrders = await Order.find({ parentOrderId: mainOrder._id });
-      
+
       if (shopOrders.length === 0) {
         console.log('⚠️ No shop orders found for main order:', mainOrder.orderNumber);
         return;
@@ -557,7 +557,7 @@ class ZoneOrderSplittingService {
       const cancelledCount = statuses.filter(s => s === 'cancelled').length;
       const readyCount = statuses.filter(s => s === 'ready').length;
       const activeCount = statuses.length - cancelledCount; // Non-cancelled orders
-      
+
       // CRITICAL FIX: Single shop conditions MUST be checked FIRST
       if (statuses.length === 1 && completedCount === 1) {
         // HIGHEST PRIORITY: Single shop order completed
@@ -572,8 +572,8 @@ class ZoneOrderSplittingService {
       } else if (activeCount > 0 && completedCount === activeCount) {
         // All active (non-cancelled) orders are completed
         newMainStatus = 'completed';
-      } else if (statuses.some(status => status === 'completed') && statuses.some(status => status === 'cancelled') && 
-                 !statuses.some(status => ['pending', 'preparing', 'ready'].includes(status))) {
+      } else if (statuses.some(status => status === 'completed') && statuses.some(status => status === 'cancelled') &&
+        !statuses.some(status => ['pending', 'preparing', 'ready'].includes(status))) {
         // Mixed completed and cancelled with no active orders
         newMainStatus = 'partially_completed';
       } else if ((readyCount + completedCount) === activeCount && activeCount > 0) {
@@ -602,14 +602,14 @@ class ZoneOrderSplittingService {
           cancelled: cancelledCount,
           active: activeCount
         },
-        triggerRule: 
+        triggerRule:
           (statuses.length === 1 && completedCount === 1) ? 'SINGLE_SHOP_COMPLETED_PRIORITY' :
-          (statuses.length === 1 && readyCount === 1) ? 'SINGLE_SHOP_READY_PRIORITY' :
-          newMainStatus === 'completed' ? 
-            (completedCount === statuses.length ? 'All orders completed' : 'All active orders completed') :
-            newMainStatus === 'cancelled' ? 'All orders cancelled' :
-            newMainStatus === 'ready' ? 'All active orders ready' :
-            newMainStatus === 'preparing' ? 'Some orders preparing' : 'Default sync'
+            (statuses.length === 1 && readyCount === 1) ? 'SINGLE_SHOP_READY_PRIORITY' :
+              newMainStatus === 'completed' ?
+                (completedCount === statuses.length ? 'All orders completed' : 'All active orders completed') :
+                newMainStatus === 'cancelled' ? 'All orders cancelled' :
+                  newMainStatus === 'ready' ? 'All active orders ready' :
+                    newMainStatus === 'preparing' ? 'Some orders preparing' : 'Default sync'
       });
 
       if (newMainStatus !== currentStatus) {
@@ -622,16 +622,16 @@ class ZoneOrderSplittingService {
           mainOrder.updateStatus(newMainStatus, 'system');
           await mainOrder.save();
         }
-        
+
         console.log('✅ Main order status updated successfully:', {
           orderNumber: mainOrder.orderNumber,
           from: currentStatus,
           to: newMainStatus
         });
-        
+
         // Notify zone admin of main order status change
         await this.notifyZoneAdmin(mainOrder.zoneId, mainOrder, shopOrders);
-        
+
         // Log business event
         loggerUtils.logBusiness('Zone main order status synced', mainOrder._id, {
           oldStatus: currentStatus,

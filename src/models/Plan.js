@@ -49,11 +49,16 @@ const planSchema = new Schema({
     uppercase: true
   },
 
-  // Plan Duration
+  // Plan Duration (Fixed at 30 days for all plans)
   durationDays: {
     type: Number,
     default: 30,
-    min: [1, 'Duration must be at least 1 day']
+    validate: {
+      validator: function(value) {
+        return value === 30;
+      },
+      message: 'All plans must have exactly 30 days duration'
+    }
   },
 
   // Plan Limits

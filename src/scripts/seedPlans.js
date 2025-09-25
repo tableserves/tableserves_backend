@@ -2,56 +2,20 @@ const mongoose = require('mongoose');
 const Plan = require('../models/Plan');
 require('dotenv').config();
 
-/**
- * Seed script for creating default subscription plans
- */
-
-const restaurantPlans = [
+// Sample plans with 30-day duration
+const samplePlans = [
+  // Restaurant Plans
   {
-    name: 'Free Starter',
-    key: 'free',
-    planType: 'restaurant',
-    price: 0,
-    currency: 'INR',
-    durationDays: null, // Unlimited duration for free plan
-    limits: {
-      maxMenus: 1,
-      maxCategories: 1,
-      maxMenuItems: 2,
-      maxTables: 1,
-      maxShops: null,
-      maxVendors: null
-    },
-    features: {
-      crudMenu: true,
-      qrGeneration: true,
-      qrCustomization: false,
-      analytics: false,
-      modifiers: false,
-      watermark: true,
-      vendorManagement: false,
-      prioritySupport: false,
-      premiumBranding: false
-    },
-    description: 'Perfect for getting started with basic menu management',
-    sortOrder: 1,
-    metadata: {
-      isPopular: false,
-      isFeatured: false,
-      tags: ['starter', 'basic']
-    }
-  },
-  {
-    name: 'Basic',
+    name: 'Restaurant Basic',
     key: 'basic',
     planType: 'restaurant',
     price: 299,
     currency: 'INR',
     durationDays: 30,
     limits: {
-      maxMenus: 5,
-      maxCategories: 8,
-      maxMenuItems: 10,
+      maxMenus: 1,
+      maxCategories: 5,
+      maxMenuItems: 25,
       maxTables: 5,
       maxShops: null,
       maxVendors: null
@@ -67,26 +31,22 @@ const restaurantPlans = [
       prioritySupport: false,
       premiumBranding: false
     },
-    description: 'Great for small restaurants with multiple menu categories',
-    sortOrder: 2,
-    metadata: {
-      isPopular: true,
-      isFeatured: false,
-      tags: ['popular', 'small-business']
-    }
+    description: 'Perfect for small restaurants getting started',
+    sortOrder: 1,
+    active: true
   },
   {
-    name: 'Advanced',
+    name: 'Restaurant Advanced',
     key: 'advanced',
     planType: 'restaurant',
     price: 1299,
     currency: 'INR',
     durationDays: 30,
     limits: {
-      maxMenus: 10,
+      maxMenus: 3,
       maxCategories: 15,
-      maxMenuItems: 20,
-      maxTables: 8,
+      maxMenuItems: 100,
+      maxTables: 15,
       maxShops: null,
       maxVendors: null
     },
@@ -101,16 +61,15 @@ const restaurantPlans = [
       prioritySupport: true,
       premiumBranding: true
     },
-    description: 'Perfect for growing restaurants with analytics and premium features',
-    sortOrder: 3,
+    description: 'Advanced features for growing restaurants',
+    sortOrder: 2,
+    active: true,
     metadata: {
-      isPopular: false,
-      isFeatured: true,
-      tags: ['analytics', 'premium']
+      isPopular: true
     }
   },
   {
-    name: 'Premium',
+    name: 'Restaurant Premium',
     key: 'premium',
     planType: 'restaurant',
     price: 2999,
@@ -135,63 +94,27 @@ const restaurantPlans = [
       prioritySupport: true,
       premiumBranding: true
     },
-    description: 'Unlimited features for large restaurants and chains',
-    sortOrder: 4,
+    description: 'Unlimited features for enterprise restaurants',
+    sortOrder: 3,
+    active: true,
     metadata: {
-      isPopular: false,
-      isFeatured: true,
-      tags: ['unlimited', 'enterprise']
-    }
-  }
-];
-
-const zonePlans = [
-  {
-    name: 'Free Starter',
-    key: 'free',
-    planType: 'zone',
-    price: 0,
-    currency: 'INR',
-    durationDays: null,
-    limits: {
-      maxMenus: 1,
-      maxCategories: 1,
-      maxMenuItems: 1,
-      maxTables: 1,
-      maxShops: 1,
-      maxVendors: 1
-    },
-    features: {
-      crudMenu: true,
-      qrGeneration: true,
-      qrCustomization: false,
-      analytics: false,
-      modifiers: false,
-      watermark: true,
-      vendorManagement: true,
-      prioritySupport: false,
-      premiumBranding: false
-    },
-    description: 'Basic zone management for single vendor',
-    sortOrder: 1,
-    metadata: {
-      isPopular: false,
-      isFeatured: false,
-      tags: ['starter', 'single-vendor']
+      isFeatured: true
     }
   },
+
+  // Zone Plans
   {
-    name: 'Basic',
+    name: 'Zone Basic',
     key: 'basic',
     planType: 'zone',
     price: 999,
     currency: 'INR',
     durationDays: 30,
     limits: {
-      maxMenus: 5,
-      maxCategories: 8,
-      maxMenuItems: 10,
-      maxTables: 5,
+      maxMenus: 1,
+      maxCategories: 10,
+      maxMenuItems: 50,
+      maxTables: 10,
       maxShops: 5,
       maxVendors: 5
     },
@@ -206,28 +129,24 @@ const zonePlans = [
       prioritySupport: false,
       premiumBranding: false
     },
-    description: 'Perfect for small food courts and zones',
-    sortOrder: 2,
-    metadata: {
-      isPopular: true,
-      isFeatured: false,
-      tags: ['popular', 'food-court']
-    }
+    description: 'Perfect for small zones and food courts',
+    sortOrder: 1,
+    active: true
   },
   {
-    name: 'Advanced',
+    name: 'Zone Advanced',
     key: 'advanced',
     planType: 'zone',
     price: 1999,
     currency: 'INR',
     durationDays: 30,
     limits: {
-      maxMenus: 10,
-      maxCategories: 15,
-      maxMenuItems: 20,
-      maxTables: 8,
-      maxShops: 8,
-      maxVendors: 8
+      maxMenus: 3,
+      maxCategories: 25,
+      maxMenuItems: 150,
+      maxTables: 25,
+      maxShops: 15,
+      maxVendors: 15
     },
     features: {
       crudMenu: true,
@@ -240,23 +159,22 @@ const zonePlans = [
       prioritySupport: true,
       premiumBranding: true
     },
-    description: 'Advanced zone management with analytics',
-    sortOrder: 3,
+    description: 'Advanced features for growing zones',
+    sortOrder: 2,
+    active: true,
     metadata: {
-      isPopular: false,
-      isFeatured: true,
-      tags: ['analytics', 'multi-vendor']
+      isPopular: true
     }
   },
   {
-    name: 'Premium',
+    name: 'Zone Premium',
     key: 'premium',
     planType: 'zone',
     price: 4999,
     currency: 'INR',
     durationDays: 30,
     limits: {
-      maxMenus: null,
+      maxMenus: null, // Unlimited
       maxCategories: null,
       maxMenuItems: null,
       maxTables: null,
@@ -274,61 +192,76 @@ const zonePlans = [
       prioritySupport: true,
       premiumBranding: true
     },
-    description: 'Unlimited zone management for large complexes',
-    sortOrder: 4,
+    description: 'Unlimited features for large zones and malls',
+    sortOrder: 3,
+    active: true,
     metadata: {
-      isPopular: false,
-      isFeatured: true,
-      tags: ['unlimited', 'enterprise', 'mall']
+      isFeatured: true
     }
   }
 ];
 
 async function seedPlans() {
   try {
-    console.log('Starting plan seeding...');
-    console.log('MongoDB URI:', process.env.MONGODB_URI ? 'Set' : 'Not set');
-
     // Connect to MongoDB
-    await mongoose.connect(process.env.MONGODB_URI || process.env.DATABASE_URI);
-    console.log('Connected to MongoDB');
+    await mongoose.connect(process.env.MONGODB_URI);
+    console.log('✅ Connected to MongoDB');
 
-    // Clear existing plans
-    const deleteResult = await Plan.deleteMany({});
-    console.log('Cleared existing plans:', deleteResult.deletedCount);
+    // Clear existing plans (optional - comment out if you want to keep existing plans)
+    // await Plan.deleteMany({});
+    // console.log('🗑️ Cleared existing plans');
 
-    // Insert restaurant plans
-    const restaurantPlanDocs = await Plan.insertMany(restaurantPlans);
-    console.log(`Created ${restaurantPlanDocs.length} restaurant plans`);
+    // Insert sample plans
+    for (const planData of samplePlans) {
+      try {
+        // Check if plan already exists
+        const existingPlan = await Plan.findOne({
+          key: planData.key,
+          planType: planData.planType
+        });
 
-    // Insert zone plans
-    const zonePlanDocs = await Plan.insertMany(zonePlans);
-    console.log(`Created ${zonePlanDocs.length} zone plans`);
+        if (existingPlan) {
+          console.log(`⚠️ Plan ${planData.planType}_${planData.key} already exists, skipping...`);
+          continue;
+        }
 
-    console.log('Plan seeding completed successfully!');
-    
-    // Display created plans
-    console.log('\n=== RESTAURANT PLANS ===');
-    restaurantPlanDocs.forEach(plan => {
-      console.log(`${plan.name} (${plan.key}): ₹${plan.price}`);
+        const plan = new Plan(planData);
+        await plan.save();
+        console.log(`✅ Created plan: ${plan.name} (${plan.planType}_${plan.key})`);
+      } catch (error) {
+        console.error(`❌ Failed to create plan ${planData.name}:`, error.message);
+      }
+    }
+
+    console.log('🎉 Plan seeding completed!');
+
+    // Display summary
+    const restaurantPlans = await Plan.find({ planType: 'restaurant', active: true });
+    const zonePlans = await Plan.find({ planType: 'zone', active: true });
+
+    console.log('\n📊 Plan Summary:');
+    console.log(`Restaurant Plans: ${restaurantPlans.length}`);
+    restaurantPlans.forEach(plan => {
+      console.log(`  - ${plan.name}: ₹${plan.price}/month (30 days)`);
     });
 
-    console.log('\n=== ZONE PLANS ===');
-    zonePlanDocs.forEach(plan => {
-      console.log(`${plan.name} (${plan.key}): ₹${plan.price}`);
+    console.log(`Zone Plans: ${zonePlans.length}`);
+    zonePlans.forEach(plan => {
+      console.log(`  - ${plan.name}: ₹${plan.price}/month (30 days)`);
     });
 
   } catch (error) {
-    console.error('Error seeding plans:', error);
+    console.error('❌ Error seeding plans:', error);
   } finally {
     await mongoose.disconnect();
-    console.log('Disconnected from MongoDB');
+    console.log('👋 Disconnected from MongoDB');
+    process.exit(0);
   }
 }
 
-// Run the seed function if this file is executed directly
+// Run the seeding function
 if (require.main === module) {
   seedPlans();
 }
 
-module.exports = { seedPlans, restaurantPlans, zonePlans };
+module.exports = { seedPlans, samplePlans };
