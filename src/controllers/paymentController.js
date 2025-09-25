@@ -5,7 +5,7 @@ const PlanPayment = require('../models/PlanPayment');
 const User = require('../models/User');
 const catchAsync = require('../utils/catchAsync');
 const { APIError } = require('../utils/apiError');
-const logger = require('../utils/logger');
+const { logger } = require('../utils/logger');
 
 // Initialize Razorpay instance (only if keys are provided)
 console.log('🔧 Initializing Razorpay...');
