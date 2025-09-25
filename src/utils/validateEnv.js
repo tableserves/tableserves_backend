@@ -47,10 +47,18 @@ const ENV_REQUIREMENTS = {
 
   // Redis/Caching (optional)
   cache: {
+    REDIS_ENABLED: { required: false, default: 'true', description: 'Enable/disable Redis caching' },
     REDIS_URL: { required: false, description: 'Redis connection URL' },
     REDIS_HOST: { required: false, description: 'Redis host' },
     REDIS_PORT: { required: false, default: '6379', description: 'Redis port' },
-    REDIS_PASSWORD: { required: false, description: 'Redis password' }
+    REDIS_PASSWORD: { required: false, description: 'Redis password' },
+    REDIS_MAX_RETRIES: { required: false, default: '3', description: 'Maximum Redis connection retries' },
+    REDIS_RETRY_DELAY: { required: false, default: '1000', description: 'Redis retry delay in milliseconds' },
+    REDIS_CIRCUIT_BREAKER_THRESHOLD: { required: false, default: '5', description: 'Circuit breaker failure threshold' },
+    FALLBACK_MEMORY_ENABLED: { required: false, default: 'true', description: 'Enable in-memory fallback cache' },
+    FALLBACK_MEMORY_MAX_SIZE: { required: false, default: '104857600', description: 'Max memory cache size in bytes (100MB)' },
+    FALLBACK_MEMORY_MAX_ENTRIES: { required: false, default: '10000', description: 'Max memory cache entries' },
+    CACHE_DEFAULT_TTL: { required: false, default: '300', description: 'Default cache TTL in seconds' }
   },
 
   // Rate Limiting
