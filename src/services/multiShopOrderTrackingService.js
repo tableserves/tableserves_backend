@@ -25,7 +25,7 @@ class MultiShopOrderTrackingService {
    */
   static async createMultiShopZoneOrder(orderData) {
     const session = await mongoose.startSession();
-    
+
     try {
       const result = await session.withTransaction(async () => {
         const {
@@ -50,7 +50,7 @@ class MultiShopOrderTrackingService {
 
         // Group items by shop with enhanced validation
         const shopGroups = await this.groupItemsByShop(items, zoneId, session);
-        
+
         if (shopGroups.length === 0) {
           throw new APIError('No valid shops found for the ordered items', 400);
         }
@@ -60,7 +60,7 @@ class MultiShopOrderTrackingService {
 
         // Generate main order number with unique code for traceability
         const { orderNumber: mainOrderNumber, uniqueCode } = await Order.generateZoneMainOrderNumber();
-        
+
         logger.info('Creating multi-shop zone order', {
           mainOrderNumber,
           uniqueCode,
@@ -69,7 +69,7 @@ class MultiShopOrderTrackingService {
           totalItems: items.length,
           totalAmount: pricing.total
         });
-        
+
         // Create main zone order (parent order for customer tracking and billing)
         const mainOrder = new Order({
           orderNumber: mainOrderNumber,
@@ -111,19 +111,19 @@ class MultiShopOrderTrackingService {
 
         for (let i = 0; i < shopGroups.length; i++) {
           const shopGroup = shopGroups[i];
-          
+
           try {
             // Generate shop order number with traceability to main order
             const shopOrderNumber = await Order.generateShopOrderNumber(uniqueCode);
-            
+
             // Calculate shop-specific pricing with precision
             const shopSubtotal = shopGroup.items.reduce((sum, item) => {
               return sum + (parseFloat(item.price) * parseInt(item.quantity));
             }, 0);
-            
+
             const taxRate = pricing.tax?.rate || 0;
             const serviceFeeRate = pricing.serviceFee?.rate || 0;
-            
+
             const shopTaxAmount = shopSubtotal * taxRate;
             const shopServiceFee = shopSubtotal * serviceFeeRate;
             const shopTotal = shopSubtotal + shopTaxAmount + shopServiceFee;
@@ -249,11 +249,11 @@ class MultiShopOrderTrackingService {
         stack: error.stack,
         orderData: { ...orderData, items: `${orderData.items?.length} items` }
       });
-      
+
       if (error instanceof APIError) {
         throw error;
       }
-      
+
       throw new APIError(`Failed to create multi-shop zone order: ${error.message}`, 500);
     } finally {
       await session.endSession();
@@ -270,7 +270,7 @@ class MultiShopOrderTrackingService {
    */
   static async updateShopOrderStatus(shopOrderId, newStatus, updatedBy = null, additionalData = {}) {
     const session = await mongoose.startSession();
-    
+
     try {
       const result = await session.withTransaction(async () => {
         // Find and validate shop order
@@ -287,13 +287,13 @@ class MultiShopOrderTrackingService {
         this.validateStatusTransition(shopOrder.status, newStatus);
 
         const oldStatus = shopOrder.status;
-        
+
         // Update shop order status (without saving yet)
         shopOrder.updateStatus(newStatus, updatedBy, additionalData.notes || '', session);
-        
+
         // CRITICAL: Ensure shop order is saved with new status BEFORE parent update
         await shopOrder.save({ session });
-        
+
         logger.debug('Shop order status updated and saved', {
           shopOrderId,
           shopOrderNumber: shopOrder.orderNumber,
@@ -304,7 +304,7 @@ class MultiShopOrderTrackingService {
 
         // Find and update parent order
         const parentOrder = await Order.findById(shopOrder.parentOrderId).session(session);
-        
+
         if (parentOrder && parentOrder.orderType === 'zone_main') {
           // Update parent order status based on all child orders
           await parentOrder.updateZoneMainStatus();
@@ -365,11 +365,11 @@ class MultiShopOrderTrackingService {
         error: error.message,
         updatedBy
       });
-      
+
       if (error instanceof APIError) {
         throw error;
       }
-      
+
       throw new APIError(`Failed to update shop order status: ${error.message}`, 500);
     } finally {
       await session.endSession();
@@ -398,9 +398,9 @@ class MultiShopOrderTrackingService {
           cacheError: cacheError.message
         });
       }
-      
+
       // Find the order (could be parent or child)
-      let order = await Order.findOne({ 
+      let order = await Order.findOne({
         orderNumber: orderNumber.toUpperCase(),
         ...(customerPhone && { 'customer.phone': customerPhone })
       })
@@ -429,8 +429,8 @@ class MultiShopOrderTrackingService {
 
       if (order.orderType === 'zone_main') {
         // For parent orders, include child order information
-        const childOrders = await Order.find({ 
-          parentOrderId: order._id 
+        const childOrders = await Order.find({
+          parentOrderId: order._id
         })
           .populate('shopId', 'name contact')
           .sort({ 'traceability.shopSequence': 1 });
@@ -508,12 +508,12 @@ class MultiShopOrderTrackingService {
       if (error instanceof APIError) {
         throw error;
       }
-      
+
       logger.error('Failed to get order tracking info', {
         orderNumber,
         error: error.message
       });
-      
+
       throw new APIError(`Failed to retrieve order tracking information: ${error.message}`, 500);
     }
   }
@@ -529,9 +529,9 @@ class MultiShopOrderTrackingService {
     const shopGroups = new Map();
 
     // Get all active shops in the zone
-    const zoneShops = await ZoneShop.find({ 
-      zoneId: zoneId, 
-      status: 'active' 
+    const zoneShops = await ZoneShop.find({
+      zoneId: zoneId,
+      status: 'active'
     })
       .select('_id name settings.estimatedPreparationTime settings.operatingHours')
       .session(session);
@@ -554,7 +554,7 @@ class MultiShopOrderTrackingService {
       const menuItem = await MenuItem.findById(item.menuItemId)
         .select('shopId name isAvailable price')
         .session(session);
-      
+
       if (!menuItem) {
         logger.warn(`Menu item ${item.menuItemId} not found`);
         continue;
@@ -565,7 +565,7 @@ class MultiShopOrderTrackingService {
       }
 
       const shopId = menuItem.shopId.toString();
-      
+
       // Check if this shop is in the zone and active
       if (!shopIds.includes(shopId)) {
         logger.warn(`Item ${item.name} belongs to shop ${shopId} which is not active in zone ${zoneId}`);
@@ -621,7 +621,7 @@ class MultiShopOrderTrackingService {
         const now = new Date();
         const currentHour = now.getHours();
         const { openTime, closeTime } = shop.settings.operatingHours;
-        
+
         if (openTime && closeTime) {
           const isOpen = currentHour >= openTime && currentHour < closeTime;
           if (!isOpen) {
@@ -636,20 +636,35 @@ class MultiShopOrderTrackingService {
    * Validate status transition
    */
   static validateStatusTransition(currentStatus, newStatus) {
+    // Simplified order flow: pending → preparing → ready → completed
     const validTransitions = {
-      'pending': ['confirmed', 'cancelled'],
-      'confirmed': ['preparing', 'cancelled'],
-      'preparing': ['ready', 'cancelled'],
-      'ready': ['completed', 'cancelled'],
-      'completed': [], // Final state
-      'cancelled': [] // Final state
+      'pending': ['preparing', 'cancelled'], // Shop accepts and starts preparing directly
+      'preparing': ['ready', 'cancelled'], // Must finish preparing before ready
+      'ready': ['completed', 'cancelled'], // Must complete from ready state
+      'completed': [], // Final state - no further transitions
+      'cancelled': [] // Final state - no transitions from cancelled
     };
 
     const allowedTransitions = validTransitions[currentStatus] || [];
-    
+
+    logger.debug('Validating status transition', {
+      currentStatus,
+      newStatus,
+      allowedTransitions,
+      isValid: allowedTransitions.includes(newStatus),
+      flow: 'pending → preparing → ready → completed'
+    });
+
     if (!allowedTransitions.includes(newStatus)) {
+      logger.error('Invalid status transition attempted', {
+        currentStatus,
+        newStatus,
+        allowedTransitions,
+        properFlow: 'pending → preparing → ready → completed'
+      });
+
       throw new APIError(
-        `Invalid status transition from "${currentStatus}" to "${newStatus}"`, 
+        `Invalid status transition from "${currentStatus}" to "${newStatus}". Allowed transitions: ${allowedTransitions.join(', ')}. Proper flow: pending → preparing → ready → completed`,
         400
       );
     }
@@ -690,7 +705,7 @@ class MultiShopOrderTrackingService {
       // Notify zone admin if parent order exists
       if (parentOrder) {
         await this.notifyZoneAdmin(parentOrder.zoneId, parentOrder, [shopOrder], 'status_updated');
-        
+
         // Notify customer about parent order status change
         await this.notifyCustomer(parentOrder.customer, parentOrder, 'status_updated');
       }
@@ -728,7 +743,7 @@ class MultiShopOrderTrackingService {
           };
 
           io.to(`shop_${shopId}`).emit(eventType, eventData);
-          
+
           logger.debug(`Shop notification sent: ${eventType}`, {
             shopId,
             orderNumber: order.orderNumber,
@@ -777,7 +792,7 @@ class MultiShopOrderTrackingService {
           };
 
           io.to(`zone_${zoneId}`).emit(eventType, eventData);
-          
+
           logger.debug(`Zone admin notification sent: ${eventType}`, {
             zoneId,
             orderNumber: mainOrder.orderNumber,
@@ -815,7 +830,7 @@ class MultiShopOrderTrackingService {
           };
 
           io.to(`customer_${customer.phone}`).emit(eventType, eventData);
-          
+
           logger.debug(`Customer notification sent: ${eventType}`, {
             customerPhone: customer.phone,
             orderNumber: order.orderNumber,
@@ -900,7 +915,7 @@ class MultiShopOrderTrackingService {
    */
   static getDateRangeStart(timeRange) {
     const now = new Date();
-    
+
     switch (timeRange) {
       case 'today':
         return new Date(now.getFullYear(), now.getMonth(), now.getDate());

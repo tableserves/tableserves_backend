@@ -192,10 +192,12 @@ describe('MultiShopOrderTrackingService', () => {
   describe('validateStatusTransition', () => {
     it('should validate correct status transitions', () => {
       const validTransitions = [
-        { from: 'pending', to: 'preparing' },
-        { from: 'preparing', to: 'ready' },
-        { from: 'ready', to: 'delivered' },
-        { from: 'pending', to: 'cancelled' }
+        { from: 'pending', to: 'preparing' }, // Shop accepts and starts preparing directly
+        { from: 'preparing', to: 'ready' }, // Preparing to ready
+        { from: 'ready', to: 'completed' }, // Ready to completed
+        { from: 'pending', to: 'cancelled' }, // Can cancel from pending
+        { from: 'preparing', to: 'cancelled' }, // Can cancel from preparing
+        { from: 'ready', to: 'cancelled' } // Can cancel from ready
       ];
 
       validTransitions.forEach(({ from, to }) => {
@@ -207,9 +209,16 @@ describe('MultiShopOrderTrackingService', () => {
 
     it('should reject invalid status transitions', () => {
       const invalidTransitions = [
-        { from: 'delivered', to: 'preparing' },
+        { from: 'pending', to: 'ready' }, // Must go through preparing
+        { from: 'pending', to: 'completed' }, // Must go through preparing and ready
+        { from: 'preparing', to: 'completed' }, // Must go through ready
         { from: 'cancelled', to: 'ready' },
-        { from: 'ready', to: 'pending' }
+        { from: 'ready', to: 'pending' },
+        { from: 'completed', to: 'ready' },
+        { from: 'cancelled', to: 'preparing' },
+        { from: 'completed', to: 'pending' },
+        { from: 'completed', to: 'preparing' },
+        { from: 'completed', to: 'cancelled' } // Cannot cancel completed orders
       ];
 
       invalidTransitions.forEach(({ from, to }) => {

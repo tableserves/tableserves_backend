@@ -145,7 +145,7 @@ const orderSchema = new Schema({
     status: {
       type: String,
       enum: {
-        values: ['pending', 'confirmed', 'preparing', 'ready', 'served'],
+        values: ['pending', 'preparing', 'ready', 'served'],
         message: 'Invalid item status'
       },
       default: 'pending'
@@ -302,7 +302,7 @@ const orderSchema = new Schema({
     required: [true, 'Order status is required'],
     enum: {
       values: [
-        'pending', 'confirmed', 'preparing', 'ready', 'completed', 'cancelled', 'refunded',
+        'pending', 'preparing', 'ready', 'completed', 'cancelled', 'refunded',
         'partially_ready', 'partially_completed' // Additional statuses for zone main orders
       ],
       message: 'Invalid order status'
@@ -466,7 +466,7 @@ const orderSchema = new Schema({
     status: {
       type: String,
       required: [true, 'Status is required'],
-      enum: ['pending', 'confirmed', 'preparing', 'ready', 'completed', 'cancelled', 'refunded']
+      enum: ['pending', 'preparing', 'ready', 'completed', 'cancelled', 'refunded']
     },
     
     timestamp: {
@@ -649,7 +649,7 @@ orderSchema.virtual('prepTime').get(function() {
 orderSchema.virtual('estimatedCompletion').get(function() {
   if (!this.delivery.estimatedTime) return null;
   
-  const startTime = this.timing.orderConfirmed || this.timing.orderPlaced;
+  const startTime = this.timing.preparationStarted || this.timing.orderPlaced;
   return new Date(startTime.getTime() + (this.delivery.estimatedTime * 60 * 1000));
 });
 
@@ -673,9 +673,7 @@ orderSchema.methods.updateStatus = function(newStatus, updatedBy = null, notes =
   // Update timing fields
   const now = new Date();
   switch (newStatus) {
-    case 'confirmed':
-      this.timing.orderConfirmed = now;
-      break;
+
     case 'preparing':
       this.timing.preparationStarted = now;
       break;
@@ -924,7 +922,7 @@ orderSchema.methods.updateZoneMainStatus = async function() {
     // Update summary
     if (status === 'completed') this.shopOrderSummary.completedShops++;
     else if (status === 'ready') this.shopOrderSummary.readyShops++;
-    else if (['preparing', 'confirmed'].includes(status)) this.shopOrderSummary.preparingShops++;
+    else if (status === 'preparing') this.shopOrderSummary.preparingShops++;
     else if (status === 'cancelled') this.shopOrderSummary.cancelledShops++;
   });
   
@@ -998,15 +996,7 @@ orderSchema.methods.updateZoneMainStatus = async function() {
       childOrderNumber: childOrders[0].orderNumber,
       newParentStatus: newStatus
     });
-  } else if (totalOrders === 1 && statusCounts.confirmed === 1) {
-    // Single shop confirmed
-    newStatus = 'confirmed';
-    console.log('🎯 SINGLE SHOP CONFIRMED RULE APPLIED:', {
-      parentOrderNumber: this.orderNumber,
-      childOrderStatus: childOrders[0].status,
-      childOrderNumber: childOrders[0].orderNumber,
-      newParentStatus: newStatus
-    });
+
   } else if (totalOrders === 1 && statusCounts.cancelled === 1) {
     // Single shop cancelled
     newStatus = 'cancelled';
@@ -1038,12 +1028,12 @@ orderSchema.methods.updateZoneMainStatus = async function() {
   } else if ((readyCount + completedCount) > 0) {
     // Some orders ready/completed, but others still preparing
     newStatus = 'partially_ready';
-  } else if (Object.keys(statusCounts).some(status => ['preparing', 'confirmed'].includes(status))) {
+  } else if (statusCounts.preparing > 0) {
     // Some orders in preparation
     newStatus = 'preparing';
   } else {
     // Default fallback
-    newStatus = 'confirmed';
+    newStatus = 'pending';
   }
   
   console.log('🎯 Zone Main Status Decision (ENHANCED: Single Shop Priority First):', {
