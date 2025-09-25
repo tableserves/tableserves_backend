@@ -466,7 +466,7 @@ const orderSchema = new Schema({
     status: {
       type: String,
       required: [true, 'Status is required'],
-      enum: ['pending', 'confirmed', 'preparing', 'ready', 'completed', 'cancelled', 'refunded']
+      enum: ['pending', 'confirmed', 'preparing', 'ready', 'completed', 'cancelled', 'refunded', 'partially_ready', 'partially_completed']
     },
     
     timestamp: {
