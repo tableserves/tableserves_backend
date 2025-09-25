@@ -856,12 +856,21 @@ const ValidationRules = {
   ],
 
   updateShopStatus: [
-    param('id')
+    param('shopId')
       .custom(isValidObjectId)
       .withMessage('Valid shop ID required'),
     body('status')
       .isIn(['active', 'inactive', 'suspended'])
       .withMessage('Status must be one of: active, inactive, suspended')
+  ],
+
+  updateShopAvailability: [
+    param('shopId')
+      .custom(isValidObjectId)
+      .withMessage('Valid shop ID required'),
+    body('status')
+      .isIn(['active', 'inactive'])
+      .withMessage('Status must be one of: active, inactive')
   ],
 
   // Customer registration validation

@@ -123,6 +123,19 @@ router.patch('/zones/:zoneId/shop/:shopId/status',
   wrapAsync(ZoneShopController.updateShopStatus, 'updateShopStatus')
 );
 
+// @route   PATCH /api/v1/shops/zones/:zoneId/shop/:shopId/availability
+// @desc    Update shop availability status (for shop owners)
+// @access  Private (Shop Owner, Zone Admin, Admin)
+router.patch('/zones/:zoneId/shop/:shopId/availability',
+  authenticate,
+  authorize('admin', 'zone_admin', 'zone_shop', 'zone_vendor'),
+  ValidationRules.validateObjectId('zoneId'),
+  ValidationRules.validateObjectId('shopId'),
+  ValidationRules.updateShopAvailability,  // Use specific availability validation
+  handleValidation,
+  wrapAsync(ZoneShopController.updateShopAvailability, 'updateShopAvailability')
+);
+
 // @route   POST /api/v1/shops/zones/:zoneId/shop/:shopId/upload
 // @desc    Upload shop images (logo or gallery)
 // @access  Private (Shop Owner, Zone Admin, Admin)

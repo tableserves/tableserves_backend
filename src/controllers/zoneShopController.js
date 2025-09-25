@@ -515,6 +515,74 @@ class ZoneShopController {
     });
   });
 
+  // @desc    Update shop availability status (for shop owners)
+  // @route   PATCH /api/v1/shops/zones/:zoneId/shop/:shopId/availability
+  // @access  Private (Shop Owner, Zone Admin, Admin)
+  static updateShopAvailability = catchAsync(async (req, res) => {
+    const { zoneId, shopId } = req.params;
+    const { status } = req.body;
+
+    const shop = await ZoneShop.findOne({ _id: shopId, zoneId });
+    if (!shop) {
+      throw ErrorTypes.NotFoundError('Shop');
+    }
+
+    // Check permissions - Allow shop owners to update their own availability
+    const zone = await Zone.findById(zoneId);
+    const canUpdate = (
+      req.user.role === 'admin' ||
+      (req.user.role === 'zone_admin' && zone.adminId.toString() === req.user.id) ||
+      shop.ownerId.toString() === req.user.id
+    );
+
+    if (!canUpdate) {
+      throw ErrorTypes.ForbiddenError('Access denied to update shop availability');
+    }
+
+    // Validate status - Only allow active/inactive for availability updates
+    const validStatuses = ['active', 'inactive'];
+    if (!validStatuses.includes(status)) {
+      throw ErrorTypes.ValidationError('Invalid status. Only "active" or "inactive" allowed for availability updates');
+    }
+
+    // Update shop status
+    shop.status = status;
+    
+    // Add to status history if shop owner is updating
+    if (req.user.role === 'zone_shop' || req.user.role === 'zone_vendor') {
+      shop.statusHistory = shop.statusHistory || [];
+      shop.statusHistory.push({
+        status,
+        notes: `Shop ${status === 'active' ? 'opened' : 'closed'} by shop owner`,
+        updatedBy: req.user.id,
+        updatedAt: new Date()
+      });
+    }
+
+    await shop.save();
+
+    console.log(`🏪 Shop availability updated by ${req.user.role}:`, {
+      shopId: shop._id,
+      shopName: shop.name,
+      oldStatus: shop.status,
+      newStatus: status,
+      updatedBy: req.user.id,
+      userRole: req.user.role
+    });
+
+    res.status(200).json({
+      success: true,
+      data: {
+        shop: {
+          id: shop._id,
+          name: shop.name,
+          status: shop.status
+        }
+      },
+      message: `Shop is now ${status === 'active' ? 'open' : 'closed'}`
+    });
+  });
+
   // @desc    Upload shop images - FIXED: Method name matches route
   // @route   POST /api/v1/shops/zones/:zoneId/shop/:shopId/upload
   // @access  Private (Shop Owner, Zone Admin, Admin)

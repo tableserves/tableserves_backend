@@ -25,7 +25,7 @@ const ZoneSchema = new mongoose.Schema({
   },
   location: {
     type: String,
-    required: [true, 'Zone location is required'],
+    required: false, // Make location optional
     trim: true,
     minlength: [5, 'Location must be at least 5 characters'],
     maxlength: [200, 'Location cannot exceed 200 characters']

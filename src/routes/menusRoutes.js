@@ -36,6 +36,7 @@ try {
   uploadMiddleware = uploadMiddleware || { single: () => (req, res, next) => next(), multiple: () => (req, res, next) => next() };
 }
 
+// Create router with updated naming convention (menus instead of menu)
 const router = express.Router();
 
 // Helper function to safely spread validation rules

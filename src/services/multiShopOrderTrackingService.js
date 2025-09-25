@@ -220,18 +220,26 @@ class MultiShopOrderTrackingService {
       // Send real-time notifications after successful transaction
       await this.sendOrderCreationNotifications(result.mainOrder, result.shopOrders);
 
-      // Cache the created order data for faster retrieval
-      await orderCacheService.cacheOrderTracking(result.mainOrder._id, {
-        parentOrder: result.mainOrder,
-        childOrders: result.shopOrders,
-        overallProgress: 0,
-        timeline: [{
-          timestamp: new Date().toISOString(),
-          event: 'Order created',
-          status: 'pending',
-          description: `Multi-shop order created across ${result.shopOrders.length} shops`
-        }]
-      });
+      // Cache the created order data for faster retrieval with graceful fallback
+      try {
+        await orderCacheService.cacheOrderTracking(result.mainOrder._id, {
+          parentOrder: result.mainOrder,
+          childOrders: result.shopOrders,
+          overallProgress: 0,
+          timeline: [{
+            timestamp: new Date().toISOString(),
+            event: 'Order created',
+            status: 'pending',
+            description: `Multi-shop order created across ${result.shopOrders.length} shops`
+          }]
+        });
+        logger.debug('New order data cached successfully');
+      } catch (cacheError) {
+        logger.warn('Failed to cache new order data, continuing without cache', {
+          orderNumber: result.mainOrder.orderNumber,
+          cacheError: cacheError.message
+        });
+      }
 
       return result;
 
@@ -282,6 +290,8 @@ class MultiShopOrderTrackingService {
         
         // Update shop order status
         await shopOrder.updateStatus(newStatus, updatedBy, additionalData.notes || '');
+        
+        // CRITICAL: Ensure shop order is saved with new status BEFORE parent update
         await shopOrder.save({ session });
 
         // Find and update parent order
@@ -322,13 +332,21 @@ class MultiShopOrderTrackingService {
       // Send real-time notifications after successful transaction
       await this.sendStatusUpdateNotifications(result.shopOrder, result.parentOrder, updatedBy);
 
-      // Invalidate related cache entries
-      await orderCacheService.invalidateOrderCache(
-        result.shopOrder._id,
-        result.parentOrder?._id,
-        result.parentOrder?.zoneId,
-        result.shopOrder.shopId
-      );
+      // Invalidate related cache entries with graceful fallback
+      try {
+        await orderCacheService.invalidateOrderCache(
+          result.shopOrder._id,
+          result.parentOrder?._id,
+          result.parentOrder?.zoneId,
+          result.shopOrder.shopId
+        );
+        logger.debug('Cache invalidated successfully after order status update');
+      } catch (cacheError) {
+        logger.warn('Failed to invalidate cache after order status update', {
+          shopOrderId,
+          cacheError: cacheError.message
+        });
+      }
 
       return result;
 
@@ -358,12 +376,21 @@ class MultiShopOrderTrackingService {
    */
   static async getOrderTrackingInfo(orderNumber, customerPhone = null) {
     try {
-      // Try to get from cache first
-      const cachedData = await orderCacheService.getCachedOrderTracking(orderNumber);
-      if (cachedData) {
-        logger.debug('Returning cached order tracking data', { orderNumber });
-        return cachedData;
+      // Try to get from cache first with graceful fallback
+      let cachedData = null;
+      try {
+        cachedData = await orderCacheService.getCachedOrderTracking(orderNumber);
+        if (cachedData) {
+          logger.debug('Returning cached order tracking data', { orderNumber });
+          return cachedData;
+        }
+      } catch (cacheError) {
+        logger.warn('Cache retrieval failed, proceeding without cache', {
+          orderNumber,
+          cacheError: cacheError.message
+        });
       }
+      
       // Find the order (could be parent or child)
       let order = await Order.findOne({ 
         orderNumber: orderNumber.toUpperCase(),
@@ -456,8 +483,16 @@ class MultiShopOrderTrackingService {
         lastUpdate: new Date().toISOString()
       };
 
-      // Cache the tracking information for future requests
-      await orderCacheService.cacheOrderTracking(order._id, trackingInfo);
+      // Cache the tracking information for future requests with graceful fallback
+      try {
+        await orderCacheService.cacheOrderTracking(order._id, trackingInfo);
+        logger.debug('Order tracking data cached successfully', { orderNumber });
+      } catch (cacheError) {
+        logger.warn('Failed to cache order tracking data, continuing without cache', {
+          orderNumber,
+          cacheError: cacheError.message
+        });
+      }
 
       return trackingInfo;
 

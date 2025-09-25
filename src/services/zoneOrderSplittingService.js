@@ -551,13 +551,20 @@ class ZoneOrderSplittingService {
         }
       });
 
-      // **ENHANCED SYNC LOGIC**: Use new status types if available
+      // **ENHANCED SYNC LOGIC WITH SINGLE SHOP PRIORITY**: Use new status types if available
       const completedCount = statuses.filter(s => s === 'completed').length;
       const cancelledCount = statuses.filter(s => s === 'cancelled').length;
       const readyCount = statuses.filter(s => s === 'ready').length;
       const activeCount = statuses.length - cancelledCount; // Non-cancelled orders
       
-      if (statuses.every(status => status === 'completed')) {
+      // CRITICAL FIX: Single shop conditions MUST be checked FIRST
+      if (statuses.length === 1 && completedCount === 1) {
+        // HIGHEST PRIORITY: Single shop order completed
+        newMainStatus = 'completed';
+      } else if (statuses.length === 1 && readyCount === 1) {
+        // HIGHEST PRIORITY: Single shop order ready
+        newMainStatus = 'ready';
+      } else if (statuses.every(status => status === 'completed')) {
         newMainStatus = 'completed';
       } else if (statuses.every(status => status === 'cancelled')) {
         newMainStatus = 'cancelled';
@@ -581,11 +588,12 @@ class ZoneOrderSplittingService {
         newMainStatus = 'confirmed';
       }
 
-      console.log('🎯 Legacy Status sync decision:', {
+      console.log('🎯 Legacy Status sync decision (ENHANCED: Single Shop Priority):', {
         mainOrderNumber: mainOrder.orderNumber,
         oldStatus: currentStatus,
         newStatus: newMainStatus,
         willUpdate: newMainStatus !== currentStatus,
+        isSingleShop: statuses.length === 1,
         statusBreakdown: {
           total: statuses.length,
           completed: completedCount,
@@ -593,15 +601,25 @@ class ZoneOrderSplittingService {
           cancelled: cancelledCount,
           active: activeCount
         },
-        syncReason: newMainStatus === 'completed' ? 
-          (completedCount === statuses.length ? 'All orders completed' : 'All active orders completed') :
-          newMainStatus === 'cancelled' ? 'All orders cancelled' :
-          newMainStatus === 'ready' ? 'All active orders ready' :
-          newMainStatus === 'preparing' ? 'Some orders preparing' : 'Default sync'
+        triggerRule: 
+          (statuses.length === 1 && completedCount === 1) ? 'SINGLE_SHOP_COMPLETED_PRIORITY' :
+          (statuses.length === 1 && readyCount === 1) ? 'SINGLE_SHOP_READY_PRIORITY' :
+          newMainStatus === 'completed' ? 
+            (completedCount === statuses.length ? 'All orders completed' : 'All active orders completed') :
+            newMainStatus === 'cancelled' ? 'All orders cancelled' :
+            newMainStatus === 'ready' ? 'All active orders ready' :
+            newMainStatus === 'preparing' ? 'Some orders preparing' : 'Default sync'
       });
 
       if (newMainStatus !== currentStatus) {
-        await mainOrder.updateStatus(newMainStatus, 'system');
+        // Use the enhanced updateZoneMainStatus method if available
+        if (mainOrder.updateZoneMainStatus && typeof mainOrder.updateZoneMainStatus === 'function') {
+          await mainOrder.updateZoneMainStatus();
+          await mainOrder.save();
+        } else {
+          // Fallback to simple status update
+          await mainOrder.updateStatus(newMainStatus, 'system');
+        }
         
         console.log('✅ Main order status updated successfully:', {
           orderNumber: mainOrder.orderNumber,

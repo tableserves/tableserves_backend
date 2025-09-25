@@ -886,14 +886,26 @@ orderSchema.methods.updateZoneMainStatus = async function() {
     return this;
   }
   
+  // CRITICAL FIX: Always fetch fresh child orders to ensure we have the latest status
   const childOrders = await this.constructor.find({ 
     parentOrderId: this._id,
     orderType: 'zone_shop'
-  });
+  }).sort({ createdAt: 1 }); // Sort by creation time for consistency
   
   if (childOrders.length === 0) {
+    console.log('⚠️ No child orders found for parent:', this.orderNumber);
     return this;
   }
+  
+  console.log('📋 FRESH CHILD ORDERS FETCHED:', {
+    parentOrderNumber: this.orderNumber,
+    childCount: childOrders.length,
+    childStatuses: childOrders.map(o => ({
+      orderNumber: o.orderNumber,
+      status: o.status,
+      updatedAt: o.updatedAt
+    }))
+  });
   
   // Reset summary
   this.shopOrderSummary.totalShops = childOrders.length;
@@ -925,7 +937,7 @@ orderSchema.methods.updateZoneMainStatus = async function() {
   const readyCount = statusCounts.ready || 0;
   const activeOrders = totalOrders - cancelledCount; // Non-cancelled orders
   
-  console.log('🔍 Zone Main Status Update Analysis:', {
+  console.log('🔍 Zone Main Status Update Analysis (ENHANCED DEBUG):', {
     parentOrderNumber: this.orderNumber,
     currentStatus,
     totalOrders,
@@ -934,11 +946,37 @@ orderSchema.methods.updateZoneMainStatus = async function() {
     cancelledCount,
     activeOrders,
     statusCounts,
-    childOrderStatuses: childOrders.map(o => ({ orderNumber: o.orderNumber, status: o.status }))
+    childOrderStatuses: childOrders.map(o => ({ 
+      orderNumber: o.orderNumber, 
+      status: o.status,
+      id: o._id.toString(),
+      updatedAt: o.updatedAt
+    })),
+    isSingleShop: totalOrders === 1,
+    singleShopConditions: totalOrders === 1 ? {
+      completedCountIs1: completedCount === 1,
+      readyCountIs1: readyCount === 1,
+      shouldTriggerCompleted: (totalOrders === 1 && completedCount === 1),
+      shouldTriggerReady: (totalOrders === 1 && readyCount === 1)
+    } : null
   });
   
-  // Priority-based status determination
-  if (completedCount === totalOrders) {
+  /*
+   * CRITICAL FIX FOR SINGLE SHOP ZONE ORDERS:
+   * Single shop conditions MUST be checked FIRST to prevent getting stuck in 
+   * intermediate states. The issue was that single shop orders would hit the
+   * general multi-shop logic before the specific single shop logic, causing
+   * them to get stuck at 'ready' instead of transitioning to 'completed'.
+   */
+  
+  // Priority-based status determination with ENHANCED single shop handling FIRST
+  if (totalOrders === 1 && completedCount === 1) {
+    // SPECIFIC FIX: Single shop order completed - should always be completed (HIGHEST PRIORITY)
+    newStatus = 'completed';
+  } else if (totalOrders === 1 && readyCount === 1) {
+    // SPECIFIC FIX: Single shop order ready - should be ready (HIGHEST PRIORITY)
+    newStatus = 'ready';
+  } else if (completedCount === totalOrders) {
     // All orders completed
     newStatus = 'completed';
   } else if (cancelledCount === totalOrders) {
@@ -968,15 +1006,27 @@ orderSchema.methods.updateZoneMainStatus = async function() {
     newStatus = 'confirmed';
   }
   
-  console.log('🎯 Zone Main Status Decision:', {
+  console.log('🎯 Zone Main Status Decision (ENHANCED: Single Shop Priority First):', {
     parentOrderNumber: this.orderNumber,
     oldStatus: currentStatus,
     newStatus,
     willUpdate: newStatus !== currentStatus,
+    isSingleShop: totalOrders === 1,
+    priorityLogic: totalOrders === 1 ? {
+      completedCount,
+      readyCount,
+      shouldBeCompleted: completedCount === 1,
+      shouldBeReady: readyCount === 1,
+      triggerRule: 
+        (totalOrders === 1 && completedCount === 1) ? 'SINGLE_SHOP_COMPLETED_PRIORITY' :
+        (totalOrders === 1 && readyCount === 1) ? 'SINGLE_SHOP_READY_PRIORITY' : 'OTHER'
+    } : 'multi_shop_logic',
     reason: newStatus === 'completed' ? 
-      (completedCount === totalOrders ? 'All orders completed' : 'All active orders completed') :
+      (totalOrders === 1 && completedCount === 1 ? 'Single shop completed (PRIORITY RULE)' :
+       completedCount === totalOrders ? 'All orders completed' : 'All active orders completed') :
       newStatus === 'cancelled' ? 'All orders cancelled' :
-      newStatus === 'ready' ? 'All active orders ready' :
+      newStatus === 'ready' ? 
+        (totalOrders === 1 && readyCount === 1 ? 'Single shop ready (PRIORITY RULE)' : 'All active orders ready') :
       newStatus === 'partially_ready' ? 'Some orders ready/completed' :
       newStatus === 'preparing' ? 'Some orders preparing' : 'Default status'
   });

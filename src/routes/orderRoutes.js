@@ -177,6 +177,15 @@ router.get('/track/:orderNumber',
 );
 
 /**
+ * @route POST /api/v1/orders/track/:orderNumber/feedback
+ * @desc Add feedback to completed order
+ * @access Public (requires customer phone for verification)
+ */
+router.post('/track/:orderNumber/feedback',
+  wrapAsync(addOrderFeedback, 'addOrderFeedback')
+);
+
+/**
  * @route GET /api/v1/orders/recent
  * @desc Get recent order for customer tracking
  * @access Public

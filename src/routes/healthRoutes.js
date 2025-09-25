@@ -1,4 +1,5 @@
 const express = require('express');
+const express = require('express');
 const mongoose = require('mongoose');
 const { createRouteHandler, routeErrorHandler, requestTimer } = require('../middleware/routeErrorHandler');
 const { logger } = require('../utils/logger');
@@ -53,17 +54,19 @@ router.get('/detailed', wrapAsync(async (req, res) => {
     dbStatus = 'error';
   }
 
-  // Check Redis connection if available
+  // Check Redis connection using OrderCacheService
   let redisStatus = 'not_configured';
   let redisResponseTime = null;
   try {
     if (process.env.REDIS_URL || process.env.REDIS_HOST) {
-      const redis = require('redis');
-      redisStatus = 'configured';
-      // In a real implementation, you'd want to actually ping Redis
-      redisResponseTime = 5; // Placeholder
+      const orderCacheService = require('../services/orderCacheService');
+      const redisStart = Date.now();
+      const redisHealth = await orderCacheService.healthCheck();
+      redisResponseTime = Date.now() - redisStart;
+      redisStatus = redisHealth.status === 'healthy' ? 'connected' : 'error';
     }
   } catch (error) {
+    logger.error('Redis health check failed:', error);
     redisStatus = 'error';
   }
 
@@ -80,7 +83,15 @@ router.get('/detailed', wrapAsync(async (req, res) => {
   };
 
   const totalResponseTime = Date.now() - startTime;
-  const overallStatus = dbStatus === 'connected' ? 'healthy' : 'degraded';
+  let overallStatus = 'healthy';
+  
+  // Determine overall status based on critical services
+  if (dbStatus !== 'connected') {
+    overallStatus = 'degraded';
+  } else if (redisStatus === 'error' && (process.env.REDIS_URL || process.env.REDIS_HOST)) {
+    // Redis is configured but failing, degrade status
+    overallStatus = 'degraded';
+  }
 
   const healthData = {
     status: overallStatus,

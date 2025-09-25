@@ -5,7 +5,7 @@ const Restaurant = require('../models/Restaurant');
 const Zone = require('../models/Zone');
 const ZoneShop = require('../models/ZoneShop');
 const Upload = require('../models/Upload');
-const { APIError } = require('../utils/apiError');
+const {APIError} = require('../utils/apiError');
 const catchAsync = require('../utils/catchAsync');
 const { UploadService } = require('../services/uploadService');
 
@@ -32,17 +32,15 @@ class MenuController {
         owner = await Restaurant.findOne({ _id: ownerId, ownerId: req.user.id });
         break;
       case 'zone':
+        // Allow zone_admin access to their assigned zone
+        if (req.user.role === 'zone_admin' && req.user.zoneId && req.user.zoneId.toString() === ownerId) {
+          console.log('CheckOwnerPermissions - Zone admin access granted to assigned zone');
+          return;
+        }
         owner = await Zone.findOne({ _id: ownerId, ownerId: req.user.id });
         break;
       case 'shop':
         // For zone shops, check multiple ownership patterns
-        const shopQuery = {
-          _id: ownerId,
-          $or: [
-            { ownerId: req.user.id }, // Direct ownership
-            { _id: req.user.shopId }   // User's assigned shop
-          ]
-        };
         
         // Special handling for zone_shop and zone_vendor roles
         if (['zone_shop', 'zone_vendor'].includes(req.user.role)) {
@@ -58,15 +56,36 @@ class MenuController {
           // First, find the shop to get its zoneId
           const shop = await ZoneShop.findById(ownerId);
           if (shop) {
-            // Then check if the zone admin owns this zone
-            const Zone = require('../models/Zone');
-            const zone = await Zone.findOne({ _id: shop.zoneId, adminId: req.user.id });
+            // Check if the zone admin is assigned to this zone
+            if (req.user.zoneId && req.user.zoneId.toString() === shop.zoneId.toString()) {
+              console.log('CheckOwnerPermissions - Zone admin access granted to shop in assigned zone');
+              return; // Allow access
+            }
+            
+            // Or check if the zone admin owns this zone
+            const zone = await Zone.findOne({ 
+              _id: shop.zoneId, 
+              $or: [
+                { adminId: req.user.id },
+                { ownerId: req.user.id }
+              ]
+            });
+            
             if (zone) {
               console.log('CheckOwnerPermissions - Zone admin access granted to shop in owned zone');
               return; // Allow access
             }
           }
         }
+        
+        // Default shop query for other cases
+        const shopQuery = {
+          _id: ownerId,
+          $or: [
+            { ownerId: req.user.id }, // Direct ownership
+            { _id: req.user.shopId }   // User's assigned shop
+          ]
+        };
         
         owner = await ZoneShop.findOne(shopQuery);
         console.log('CheckOwnerPermissions - Shop lookup result:', owner);
@@ -322,6 +341,85 @@ class MenuController {
   });
 
   // Category Methods
+  // @desc    Create new menu category
+  // @route   POST /api/menu/:ownerType/:ownerId/categories
+  // @access  Private
+  static createCategory = catchAsync(async (req, res) => {
+    const { ownerType, ownerId } = req.params;
+    const { name, description, sortOrder, settings, availability, tags, image } = req.body;
+
+    console.log('Menu category creation data received:', { 
+      name, description, sortOrder, settings, availability, tags, image,
+      fullBody: req.body 
+    }); // Debug log
+
+    await this.checkOwnerPermissions(req, ownerType, ownerId);
+
+    const categoryData = {
+      name,
+      description: description || '',
+      sortOrder: sortOrder || 0,
+      active: true,
+      settings: settings || { showInMenu: true },
+      availability: availability || {},
+      tags: tags || []
+    };
+
+    if (image && image !== 'null' && image.trim()) {
+      // Extract publicId from Cloudinary URL or use a generated one
+      const publicId = image.includes('cloudinary.com') 
+        ? image.split('/').pop().split('.')[0] 
+        : `menu_category_${Date.now()}`;
+      
+      categoryData.image = { url: image.trim(), publicId };
+    }
+
+    // Set the appropriate owner ID field based on ownerType
+    switch (ownerType) {
+      case 'restaurant':
+        categoryData.restaurantId = ownerId;
+        break;
+      case 'zone':
+        categoryData.zoneId = ownerId;
+        break;
+      case 'shop':
+        categoryData.shopId = ownerId;
+        break;
+      default:
+        throw new APIError(`Invalid owner type: ${ownerType}`, 400);
+    }
+
+    try {
+      const category = await MenuCategory.create(categoryData);
+
+      // Update subscription usage counts
+      await this.updateSubscriptionUsage(req.user.id, ownerType, ownerId, 'categories', 1);
+
+      // Transform response to match frontend expectations
+      const responseCategory = {
+        id: category._id,
+        name: category.name,
+        description: category.description,
+        image: category.image?.url || null,
+        isActive: category.active,
+        sortOrder: category.sortOrder,
+        settings: category.settings,
+        tags: category.tags,
+        createdAt: category.createdAt,
+        updatedAt: category.updatedAt
+      };
+
+      res.status(201).json({
+        success: true,
+        data: responseCategory,
+        message: 'Category created successfully'
+      });
+    } catch (error) {
+      console.error('Error creating menu category:', error);
+      throw new APIError(error.message || 'Failed to create menu category', 500);
+    }
+  });
+
   static getCategories = catchAsync(async (req, res) => {
     const { ownerType, ownerId } = req.params;
     const { page = 1, limit = 20, search } = req.query;

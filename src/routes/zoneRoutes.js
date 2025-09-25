@@ -1,6 +1,6 @@
 const express = require('express');
 const ZoneController = require('../controllers/zoneController');
-const { authenticate, authorize } = require('../middleware/authMiddleware');
+const { authenticate, optionalAuth, authorize } = require('../middleware/authMiddleware');
 const { ValidationRules, handleValidation } = require('../middleware/validationMiddleware');
 const { createRouteHandler, routeErrorHandler, requestTimer } = require('../middleware/routeErrorHandler');
 
@@ -12,7 +12,32 @@ router.use(requestTimer);
 // Use the standardized route handler
 const wrapAsync = createRouteHandler;
 
-// Apply authentication middleware to all routes
+// ==================== PUBLIC ROUTES ====================
+
+// @route   GET /api/zones/search/location
+// @desc    Search zones by location
+// @access  Public
+router.get('/search/location',
+  wrapAsync(ZoneController.getZonesByLocation, 'getZonesByLocation')
+);
+
+// ==================== OPTIONAL AUTH ROUTES ====================
+
+// Apply optional authentication for mixed public/private access
+router.use(optionalAuth);
+
+// @route   GET /api/zones/:id
+// @desc    Get single zone by ID
+// @access  Public for basic info (QR scanning), Private for detailed info
+router.get('/:id',
+  ValidationRules.validateObjectId('id'),
+  handleValidation,
+  wrapAsync(ZoneController.getZone, 'getZone')
+);
+
+// ==================== PROTECTED ROUTES ====================
+
+// Apply authentication for protected routes
 router.use(authenticate);
 
 // @route   GET /api/zones
@@ -34,13 +59,6 @@ router.get('/platform/stats',
   wrapAsync(ZoneController.getPlatformZoneStats, 'getPlatformZoneStats')
 );
 
-// @route   GET /api/zones/search/location
-// @desc    Search zones by location
-// @access  Public
-router.get('/search/location',
-  wrapAsync(ZoneController.getZonesByLocation, 'getZonesByLocation')
-);
-
 // @route   POST /api/zones
 // @desc    Create a new zone
 // @access  Private (Admin only)
@@ -49,15 +67,6 @@ router.post('/',
   ValidationRules.createZone,
   handleValidation,
   wrapAsync(ZoneController.createZone, 'createZone')
-);
-
-// @route   GET /api/zones/:id
-// @desc    Get single zone by ID
-// @access  Private (Admin, Zone Admin - own zone only)
-router.get('/:id',
-  ValidationRules.validateObjectId('id'),
-  handleValidation,
-  wrapAsync(ZoneController.getZone, 'getZone')
 );
 
 // @route   PUT /api/zones/:id

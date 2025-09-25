@@ -3,23 +3,10 @@ const { promisify } = require('util');
 
 class OrderCacheService {
   constructor() {
-    this.client = redis.createClient({
-      host: process.env.REDIS_HOST || 'localhost',
-      port: process.env.REDIS_PORT || 6379,
-      password: process.env.REDIS_PASSWORD,
-      retryDelayOnFailover: 100,
-      enableReadyCheck: false,
-      maxRetriesPerRequest: null
-    });
-
-    this.client.on('error', (err) => {
-      console.error('Redis Cache Error:', err);
-    });
-
-    this.client.on('connect', () => {
-      console.log('Redis Cache Service connected');
-    });
-
+    this.client = null;
+    this.isConnected = false;
+    this.isConnecting = false;
+    
     // Cache configuration
     this.TTL = {
       ORDER_TRACKING: 300, // 5 minutes
@@ -27,6 +14,88 @@ class OrderCacheService {
       ORDER_STATS: 600, // 10 minutes
       ZONE_ORDERS: 240 // 4 minutes
     };
+
+    // Initialize connection
+    this.connect();
+  }
+
+  /**
+   * Initialize Redis connection with proper error handling
+   */
+  async connect() {
+    if (this.isConnecting || this.isConnected) {
+      return;
+    }
+
+    this.isConnecting = true;
+
+    try {
+      // Create Redis client with v4+ syntax
+      this.client = redis.createClient({
+        socket: {
+          host: process.env.REDIS_HOST || 'localhost',
+          port: process.env.REDIS_PORT || 6379,
+          reconnectStrategy: (retries) => {
+            console.log(`Redis reconnection attempt ${retries}`);
+            if (retries > 10) {
+              console.error('Redis reconnection failed after 10 attempts');
+              return false;
+            }
+            return Math.min(retries * 50, 500);
+          }
+        },
+        password: process.env.REDIS_PASSWORD || undefined
+      });
+
+      // Set up event handlers
+      this.client.on('error', (err) => {
+        console.error('Redis Cache Error:', err);
+        this.isConnected = false;
+      });
+
+      this.client.on('connect', () => {
+        console.log('Redis Cache Service connecting...');
+      });
+
+      this.client.on('ready', () => {
+        console.log('Redis Cache Service connected and ready');
+        this.isConnected = true;
+        this.isConnecting = false;
+      });
+
+      this.client.on('end', () => {
+        console.log('Redis Cache Service connection ended');
+        this.isConnected = false;
+      });
+
+      this.client.on('reconnecting', () => {
+        console.log('Redis Cache Service reconnecting...');
+        this.isConnected = false;
+      });
+
+      // Connect to Redis
+      await this.client.connect();
+
+    } catch (error) {
+      console.error('Failed to connect to Redis:', error);
+      this.isConnecting = false;
+      this.isConnected = false;
+      this.client = null;
+    }
+  }
+
+  /**
+   * Ensure Redis connection is available
+   */
+  async ensureConnection() {
+    if (!this.client || !this.isConnected) {
+      console.log('Redis not connected, attempting to reconnect...');
+      await this.connect();
+    }
+    
+    if (!this.client || !this.isConnected) {
+      throw new Error('Redis connection unavailable');
+    }
   }
 
   /**
@@ -34,6 +103,8 @@ class OrderCacheService {
    */
   async cacheOrderTracking(orderId, trackingData) {
     try {
+      await this.ensureConnection();
+      
       const cacheKey = `order:tracking:${orderId}`;
       const cacheValue = {
         ...trackingData,
@@ -41,7 +112,7 @@ class OrderCacheService {
         version: '1.0'
       };
 
-      await this.client.setex(
+      await this.client.setEx(
         cacheKey, 
         this.TTL.ORDER_TRACKING, 
         JSON.stringify(cacheValue)
@@ -66,6 +137,8 @@ class OrderCacheService {
    */
   async getCachedOrderTracking(orderId) {
     try {
+      await this.ensureConnection();
+      
       const cacheKey = `order:tracking:${orderId}`;
       const cached = await this.client.get(cacheKey);
       
@@ -92,8 +165,10 @@ class OrderCacheService {
    */
   async cacheChildOrder(childOrderId, orderData) {
     try {
+      await this.ensureConnection();
+      
       const cacheKey = `order:child:${childOrderId}`;
-      await this.client.setex(
+      await this.client.setEx(
         cacheKey, 
         this.TTL.ORDER_TRACKING, 
         JSON.stringify({
@@ -113,6 +188,8 @@ class OrderCacheService {
    */
   async cacheActiveZoneOrders(zoneId, orders) {
     try {
+      await this.ensureConnection();
+      
       const cacheKey = `zone:active:${zoneId}`;
       const cacheValue = {
         orders,
@@ -121,7 +198,7 @@ class OrderCacheService {
         lastUpdated: new Date().toISOString()
       };
 
-      await this.client.setex(
+      await this.client.setEx(
         cacheKey, 
         this.TTL.ACTIVE_ORDERS, 
         JSON.stringify(cacheValue)
@@ -142,6 +219,8 @@ class OrderCacheService {
    */
   async getCachedActiveZoneOrders(zoneId, statusFilter = null) {
     try {
+      await this.ensureConnection();
+      
       const cacheKey = `zone:active:${zoneId}`;
       const cached = await this.client.get(cacheKey);
       
@@ -173,6 +252,8 @@ class OrderCacheService {
    */
   async createOrderStatusIndex(zoneId, orders) {
     try {
+      await this.ensureConnection();
+      
       const statusGroups = orders.reduce((groups, order) => {
         if (!groups[order.status]) {
           groups[order.status] = [];
@@ -183,7 +264,7 @@ class OrderCacheService {
 
       for (const [status, orderIds] of Object.entries(statusGroups)) {
         const indexKey = `zone:status:${zoneId}:${status}`;
-        await this.client.setex(
+        await this.client.setEx(
           indexKey, 
           this.TTL.ACTIVE_ORDERS, 
           JSON.stringify(orderIds)
@@ -199,6 +280,8 @@ class OrderCacheService {
    */
   async cacheOrderStats(entityType, entityId, stats) {
     try {
+      await this.ensureConnection();
+      
       const cacheKey = `stats:${entityType}:${entityId}`;
       const cacheValue = {
         ...stats,
@@ -207,7 +290,7 @@ class OrderCacheService {
         entityId
       };
 
-      await this.client.setex(
+      await this.client.setEx(
         cacheKey, 
         this.TTL.ORDER_STATS, 
         JSON.stringify(cacheValue)
@@ -225,6 +308,8 @@ class OrderCacheService {
    */
   async invalidateOrderCache(orderId, parentOrderId = null, zoneId = null, shopId = null) {
     try {
+      await this.ensureConnection();
+      
       const keysToDelete = [
         `order:tracking:${orderId}`,
         `order:child:${orderId}`
@@ -258,11 +343,14 @@ class OrderCacheService {
   }
 
   /**
-   * Bulk cache multiple orders for efficiency
+   * Bulk cache multiple orders for efficiency  
    */
   async bulkCacheOrders(orders) {
     try {
-      const pipeline = this.client.pipeline();
+      await this.ensureConnection();
+      
+      // Use multi for atomic batch operations in Redis v4+
+      const multi = this.client.multi();
       
       for (const order of orders) {
         const cacheKey = `order:bulk:${order._id}`;
@@ -271,10 +359,10 @@ class OrderCacheService {
           cachedAt: new Date().toISOString()
         });
         
-        pipeline.setex(cacheKey, this.TTL.ORDER_TRACKING, cacheValue);
+        multi.setEx(cacheKey, this.TTL.ORDER_TRACKING, cacheValue);
       }
 
-      await pipeline.exec();
+      await multi.exec();
       return true;
     } catch (error) {
       console.error('Error bulk caching orders:', error);
@@ -287,8 +375,10 @@ class OrderCacheService {
    */
   async cacheOrderTimeline(orderId, timeline) {
     try {
+      await this.ensureConnection();
+      
       const cacheKey = `timeline:${orderId}`;
-      await this.client.setex(
+      await this.client.setEx(
         cacheKey, 
         this.TTL.ORDER_TRACKING, 
         JSON.stringify({
@@ -309,17 +399,24 @@ class OrderCacheService {
    */
   async getCacheMetrics() {
     try {
+      await this.ensureConnection();
+      
       const info = await this.client.info('memory');
       const keyspace = await this.client.info('keyspace');
       
       return {
         memory: this.parseRedisInfo(info),
         keyspace: this.parseRedisInfo(keyspace),
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        connectionStatus: this.isConnected
       };
     } catch (error) {
       console.error('Error getting cache metrics:', error);
-      return null;
+      return {
+        error: error.message,
+        connectionStatus: this.isConnected,
+        timestamp: new Date().toISOString()
+      };
     }
   }
 
@@ -345,6 +442,8 @@ class OrderCacheService {
    */
   async cleanup() {
     try {
+      await this.ensureConnection();
+      
       // Redis handles TTL automatically, but we can do additional cleanup
       const expiredPatterns = [
         'order:tracking:*',
@@ -370,13 +469,38 @@ class OrderCacheService {
   }
 
   /**
-   * Close Redis connection
+   * Close Redis connection properly
    */
   async close() {
     try {
-      await this.client.quit();
+      if (this.client && this.isConnected) {
+        await this.client.quit();
+        this.isConnected = false;
+      }
     } catch (error) {
       console.error('Error closing Redis connection:', error);
+    }
+  }
+
+  /**
+   * Health check for Redis connection
+   */
+  async healthCheck() {
+    try {
+      await this.ensureConnection();
+      await this.client.ping();
+      return {
+        status: 'healthy',
+        connected: this.isConnected,
+        timestamp: new Date().toISOString()
+      };
+    } catch (error) {
+      return {
+        status: 'unhealthy',
+        connected: false,
+        error: error.message,
+        timestamp: new Date().toISOString()
+      };
     }
   }
 }

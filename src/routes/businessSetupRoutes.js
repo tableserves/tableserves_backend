@@ -106,7 +106,7 @@ router.post('/complete',
         subscriptionId: subscription._id,
         name: businessData.name,
         description: businessData.description || `${businessData.name} - Food Zone`,
-        location: businessData.address?.street || 'Location not specified',
+        location: businessData.address?.street || '',
         contactInfo: {
           email: user.email,
           phone: user.phone

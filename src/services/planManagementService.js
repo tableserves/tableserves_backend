@@ -2,7 +2,7 @@ const User = require('../models/User');
 const Plan = require('../models/Plan');
 const PlanPayment = require('../models/PlanPayment');
 const logger = require('../utils/logger');
-const APIError = require('../utils/APIError');
+const {APIError} = require('../utils/apiError');
 
 /**
  * Plan Management Service

@@ -774,8 +774,8 @@ const updateOrderStatus = catchAsync(async (req, res) => {
 
   // Check if this is a shop order (part of zone split)
   if (order.orderType === 'shop_split' || order.orderType === 'zone_shop') {
-    // Update shop order and sync main order
-    const updatedOrder = await ZoneOrderSplittingService.updateShopOrderStatus(id, status, userId);
+    // ENHANCED: Use the enhanced MultiShopOrderTrackingService for better single shop handling
+    const updatedOrder = await MultiShopOrderTrackingService.updateShopOrderStatus(id, status, userId);
 
     res.status(200).json({
       success: true,

@@ -98,7 +98,13 @@ const register = catchAsync(async (req, res) => {
       existingUserId: existingUser._id
     });
 
-    throw new APIError(`An account already exists with this ${duplicateField}. Please use a different ${duplicateField} or try logging in.`, 409);
+    if (duplicateField === 'email') {
+      throw new APIError('An account with this email already exists. Please use a different email address or try logging in instead.', 409);
+    } else if (duplicateField === 'phone') {
+      throw new APIError('An account with this phone number already exists. Please use a different phone number or try logging in instead.', 409);
+    } else {
+      throw new APIError(`An account with this ${duplicateField} already exists. Please use different information or try logging in.`, 409);
+    }
   }
 
   // Hash password
@@ -261,7 +267,7 @@ const register = catchAsync(async (req, res) => {
       subscriptionId: user.subscription,
       name: profile?.businessName || 'My Food Zone',
       description: `${profile?.businessName || 'My Food Zone'} - Multiple food vendors in one place`,
-      location: 'Location not specified',
+      location: profile?.location || 'Location to be updated', // Provide default value
       contactInfo: {
         email: user.email,
         phone: user.phone
@@ -387,7 +393,7 @@ const login = catchAsync(async (req, res) => {
   }
 
   if (!user) {
-    throw new APIError('Invalid credentials', 401);
+    throw new APIError('Username or password is incorrect. Please check your credentials and try again.', 401);
   }
 
   // Check account lock

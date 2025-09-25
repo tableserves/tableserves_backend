@@ -83,7 +83,7 @@ class ZoneController {
 
   // @desc    Get single zone
   // @route   GET /api/zones/:id
-  // @access  Private (Admin, Zone Admin - own zone only)
+  // @access  Public for basic info (QR scanning), Private for detailed info
   static getZone = catchAsync(async (req, res) => {
     const { id } = req.params;
     const { includeShops = false } = req.query;
@@ -98,14 +98,48 @@ class ZoneController {
       throw ErrorTypes.NotFoundError('Zone');
     }
     
-    // Check permissions
+    // Public access (QR scanning) - return basic zone info
+    if (!req.user) {
+      const publicZoneData = {
+        id: zone._id,
+        name: zone.name,
+        description: zone.description,
+        location: zone.location,
+        active: zone.active,
+        media: zone.media, // Include media for logo/images display
+        settings: {
+          operatingHours: zone.settings?.operatingHours || {},
+          features: zone.settings?.features || {}
+        }
+      };
+      
+      // Include basic shop info for public access if zone is active
+      if (zone.active && includeShops === 'true') {
+        const shops = await ZoneShop.findByZone(id, { status: 'active' });
+        publicZoneData.shops = shops.map(shop => ({
+          id: shop._id,
+          name: shop.name,
+          description: shop.description,
+          category: shop.category,
+          rating: shop.rating,
+          status: shop.status
+        }));
+      }
+      
+      return res.status(200).json({
+        success: true,
+        data: { zone: publicZoneData }
+      });
+    }
+    
+    // Private access - check permissions for detailed info
     if (req.user.role === 'zone_admin' && zone.adminId._id.toString() !== req.user.id) {
       throw ErrorTypes.ForbiddenError('Access denied to this zone');
     }
     
     let responseData = { zone };
     
-    // Include shops if requested
+    // Include shops if requested for authenticated users
     if (includeShops === 'true') {
       const shops = await ZoneShop.findByZone(id, { status: 'active' });
       responseData.shops = shops;
