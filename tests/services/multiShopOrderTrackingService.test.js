@@ -192,10 +192,12 @@ describe('MultiShopOrderTrackingService', () => {
   describe('validateStatusTransition', () => {
     it('should validate correct status transitions', () => {
       const validTransitions = [
-        { from: 'pending', to: 'preparing' }, // Shop accepts and starts preparing directly
-        { from: 'preparing', to: 'ready' }, // Preparing to ready
+        { from: 'pending', to: 'confirmed' }, // Shop confirms order
+        { from: 'confirmed', to: 'ready' }, // Shop confirms and prepares - can go directly to ready
+        { from: 'preparing', to: 'ready' }, // Legacy support - preparing to ready
         { from: 'ready', to: 'completed' }, // Ready to completed
         { from: 'pending', to: 'cancelled' }, // Can cancel from pending
+        { from: 'confirmed', to: 'cancelled' }, // Can cancel from confirmed
         { from: 'preparing', to: 'cancelled' }, // Can cancel from preparing
         { from: 'ready', to: 'cancelled' } // Can cancel from ready
       ];
@@ -209,16 +211,17 @@ describe('MultiShopOrderTrackingService', () => {
 
     it('should reject invalid status transitions', () => {
       const invalidTransitions = [
-        { from: 'pending', to: 'ready' }, // Must go through preparing
-        { from: 'pending', to: 'completed' }, // Must go through preparing and ready
+        { from: 'pending', to: 'preparing' }, // Must go through confirmed
+        { from: 'pending', to: 'ready' }, // Must go through confirmed
+        { from: 'pending', to: 'completed' }, // Must go through confirmed and ready
+        { from: 'confirmed', to: 'completed' }, // Must go through ready
         { from: 'preparing', to: 'completed' }, // Must go through ready
         { from: 'cancelled', to: 'ready' },
         { from: 'ready', to: 'pending' },
         { from: 'completed', to: 'ready' },
         { from: 'cancelled', to: 'preparing' },
         { from: 'completed', to: 'pending' },
-        { from: 'completed', to: 'preparing' },
-        { from: 'completed', to: 'cancelled' } // Cannot cancel completed orders
+        { from: 'completed', to: 'preparing' }
       ];
 
       invalidTransitions.forEach(({ from, to }) => {

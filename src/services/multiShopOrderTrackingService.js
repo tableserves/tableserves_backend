@@ -636,10 +636,11 @@ class MultiShopOrderTrackingService {
    * Validate status transition
    */
   static validateStatusTransition(currentStatus, newStatus) {
-    // Simplified order flow: pending → preparing → ready → completed
+    // Order flow: pending → confirmed → ready → completed (confirmed combines confirmation + preparing)
     const validTransitions = {
-      'pending': ['preparing', 'cancelled'], // Shop accepts and starts preparing directly
-      'preparing': ['ready', 'cancelled'], // Must finish preparing before ready
+      'pending': ['confirmed', 'cancelled'], // Shop confirms order
+      'confirmed': ['ready', 'cancelled'], // Shop confirms and prepares (combined step) - can go directly to ready
+      'preparing': ['ready', 'cancelled'], // Legacy support - preparing can still go to ready
       'ready': ['completed', 'cancelled'], // Must complete from ready state
       'completed': [], // Final state - no further transitions
       'cancelled': [] // Final state - no transitions from cancelled
@@ -652,7 +653,7 @@ class MultiShopOrderTrackingService {
       newStatus,
       allowedTransitions,
       isValid: allowedTransitions.includes(newStatus),
-      flow: 'pending → preparing → ready → completed'
+      flow: 'pending → confirmed → ready → completed (confirmed includes preparing)'
     });
 
     if (!allowedTransitions.includes(newStatus)) {
@@ -660,11 +661,11 @@ class MultiShopOrderTrackingService {
         currentStatus,
         newStatus,
         allowedTransitions,
-        properFlow: 'pending → preparing → ready → completed'
+        properFlow: 'pending → confirmed → ready → completed (confirmed includes preparing)'
       });
 
       throw new APIError(
-        `Invalid status transition from "${currentStatus}" to "${newStatus}". Allowed transitions: ${allowedTransitions.join(', ')}. Proper flow: pending → preparing → ready → completed`,
+        `Invalid status transition from "${currentStatus}" to "${newStatus}". Allowed transitions: ${allowedTransitions.join(', ')}. Proper flow: pending → confirmed → ready → completed`,
         400
       );
     }
