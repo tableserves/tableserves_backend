@@ -3,69 +3,15 @@ const { logger } = require('../utils/logger');
 
 class RateLimitService {
   constructor() {
-    this.redisClient = null;
-    this.store = null;
-    this.initializeRedis().catch(error => {
-      console.error('Failed to initialize Redis for rate limiting:', error);
-      // Fall back to in-memory store if Redis fails
-      this.store = new rateLimit.MemoryStore();
-      logger.warn('Falling back to in-memory rate limiting store');
-    });
+    // Always use in-memory store - no Redis complexity
+    this.store = new rateLimit.MemoryStore();
+    logger.info('Rate limiting initialized with in-memory store');
   }
 
-  // Initialize Redis connection for rate limiting
-  async initializeRedis() {
-    // If we're in test environment, use in-memory store
-    if (process.env.NODE_ENV === 'test') {
-      this.store = new rateLimit.MemoryStore();
-      return;
-    }
-
-    try {
-      if (!process.env.REDIS_URL) {
-        throw new Error('REDIS_URL is not defined');
-      }
-
-      // Use dynamic imports to avoid loading these modules if Redis is not needed
-      const { createClient } = await import('redis');
-      
-      this.redisClient = createClient({
-        url: process.env.REDIS_URL,
-        socket: {
-          reconnectStrategy: (retries) => {
-            if (retries > 5) {
-              logger.warn('Max Redis reconnection attempts reached. Using in-memory store.');
-              this.store = new rateLimit.MemoryStore();
-              return false; // Stop reconnecting
-            }
-            // Reconnect after 1s, 2s, 4s, 8s, 16s
-            return Math.min(retries * 1000, 16000);
-          }
-        }
-      });
-
-      this.redisClient.on('error', (err) => {
-        logger.error('Redis error:', err);
-        // Fall back to in-memory store on error
-        this.store = this.store || new rateLimit.MemoryStore();
-      });
-
-      this.redisClient.on('connect', () => {
-        logger.info('Connected to Redis for rate limiting');
-      });
-
-      await this.redisClient.connect();
-
-      const RedisStore = (await import('rate-limit-redis')).default;
-      this.store = new RedisStore({
-        sendCommand: (...args) => this.redisClient.sendCommand(args),
-        prefix: 'rate-limit:'
-      });
-
-    } catch (error) {
-      logger.error('Failed to initialize Redis for rate limiting, using in-memory store:', error.message);
-      this.store = new rateLimit.MemoryStore();
-    }
+  // Simple initialization - no Redis needed
+  initialize() {
+    // Already initialized in constructor
+    return Promise.resolve();
   }
 
   // Create rate limiter with Redis store if available, otherwise use in-memory store
@@ -355,25 +301,13 @@ class RateLimitService {
 
   // Get rate limit status for a key
   async getRateLimitStatus(key) {
-    if (!this.redisClient) {
-      return { error: 'Redis not available' };
-    }
-
-    try {
-      const result = await this.redisClient.get(`rl:${key}`);
-      if (result) {
-        const data = JSON.parse(result);
-        return {
-          requests: data.requests,
-          remaining: Math.max(0, data.limit - data.requests),
-          resetTime: new Date(data.resetTime)
-        };
-      }
-      return { requests: 0, remaining: 'unknown', resetTime: null };
-    } catch (error) {
-      logger.error('Error getting rate limit status', { key, error: error.message });
-      return { error: 'Failed to get rate limit status' };
-    }
+    // Simple implementation - just return basic info
+    return { 
+      requests: 0, 
+      remaining: 'unknown', 
+      resetTime: null,
+      store: 'memory'
+    };
   }
 
   // Whitelist IPs (admin IPs, trusted partners)
@@ -398,16 +332,10 @@ class RateLimitService {
     };
   }
 
-  // Close Redis connection
+  // Close connections
   async close() {
-    if (this.redisClient) {
-      try {
-        await this.redisClient.quit();
-        logger.info('Redis connection closed');
-      } catch (error) {
-        logger.error('Error closing Redis connection', { error: error.message });
-      }
-    }
+    // Nothing to close for in-memory store
+    logger.info('Rate limit service closed');
   }
 }
 
