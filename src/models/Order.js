@@ -887,16 +887,19 @@ orderSchema.methods.updateShopOrderSummary = function(childOrderStatus, operatio
 /**
  * Calculate and update zone main order status based on child orders
  */
-orderSchema.methods.updateZoneMainStatus = async function() {
+orderSchema.methods.updateZoneMainStatus = async function(session = null) {
   if (this.orderType !== 'zone_main') {
     return this;
   }
   
-  // CRITICAL FIX: Always fetch fresh child orders to ensure we have the latest status
-  const childOrders = await this.constructor.find({ 
+  // CRITICAL FIX: Always fetch fresh child orders with session to ensure we have the latest status
+  const query = this.constructor.find({ 
     parentOrderId: this._id,
     orderType: 'zone_shop'
   }).sort({ createdAt: 1 }); // Sort by creation time for consistency
+  
+  // Use session if provided to see uncommitted changes
+  const childOrders = session ? await query.session(session) : await query;
   
   if (childOrders.length === 0) {
     console.log('⚠️ No child orders found for parent:', this.orderNumber);

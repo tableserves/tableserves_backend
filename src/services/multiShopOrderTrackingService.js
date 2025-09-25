@@ -299,25 +299,30 @@ class MultiShopOrderTrackingService {
           shopOrderNumber: shopOrder.orderNumber,
           oldStatus,
           newStatus,
-          updatedBy
+          updatedBy,
+          hasParentOrder: !!shopOrder.parentOrderId
         });
 
         // Find and update parent order
         const parentOrder = await Order.findById(shopOrder.parentOrderId).session(session);
 
         if (parentOrder && parentOrder.orderType === 'zone_main') {
-          // Update parent order status based on all child orders
-          await parentOrder.updateZoneMainStatus();
+          const parentOldStatus = parentOrder.status;
+          
+          // Update parent order status based on all child orders (pass session to see uncommitted changes)
+          await parentOrder.updateZoneMainStatus(session);
           await parentOrder.save({ session });
 
           logger.info('Shop order status updated with parent synchronization', {
             shopOrderId,
             shopOrderNumber: shopOrder.orderNumber,
-            oldStatus,
-            newStatus,
+            childOldStatus: oldStatus,
+            childNewStatus: newStatus,
             parentOrderId: parentOrder._id,
             parentOrderNumber: parentOrder.orderNumber,
+            parentOldStatus: parentOldStatus,
             parentNewStatus: parentOrder.status,
+            parentStatusChanged: parentOldStatus !== parentOrder.status,
             updatedBy
           });
 
