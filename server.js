@@ -331,6 +331,7 @@ const routeConfigs = [
   { name: 'qr', path: './src/routes/qrCodeRoutes', mount: '/qr', required: false },
   { name: 'subscriptions', path: './src/routes/subscriptionRoutes', mount: '/subscriptions', required: false },
   { name: 'plans', path: './src/routes/planRoutes', mount: '/plans', required: false },
+  { name: 'plan-usage', path: './src/routes/planUsageRoutes', mount: '/plan-usage', required: false },
   { name: 'payment', path: './src/routes/paymentRoutes', mount: '/payment', required: false },
   { name: 'webhooks', path: './src/routes/webhookRoutes', mount: '/webhooks', required: false }, // Made optional
   { name: 'analytics', path: './src/routes/analyticsRoutes', mount: '/analytics', required: false },

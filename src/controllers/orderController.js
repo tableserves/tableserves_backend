@@ -788,7 +788,8 @@ const updateOrderStatus = catchAsync(async (req, res) => {
   // Handle regular restaurant order or main zone order
   const oldStatus = order.status;
   order.previousStatus = oldStatus; // Track previous status for real-time notifications
-  await order.updateStatus(status, userId, notes);
+  order.updateStatus(status, userId, notes);
+  await order.save();
 
   // Send real-time notifications with enhanced data
   try {
@@ -1420,7 +1421,8 @@ const batchUpdateOrderStatus = catchAsync(async (req, res) => {
         results.push({ orderId, success: true, orderNumber: result.shopOrder.orderNumber });
       } else {
         // Regular order update
-        await order.updateStatus(status, userId, notes);
+        order.updateStatus(status, userId, notes);
+        await order.save();
         results.push({ orderId, success: true, orderNumber: order.orderNumber });
       }
     } catch (error) {

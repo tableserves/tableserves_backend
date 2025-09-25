@@ -658,7 +658,7 @@ orderSchema.virtual('estimatedCompletion').get(function() {
 /**
  * Update order status
  */
-orderSchema.methods.updateStatus = function(newStatus, updatedBy = null, notes = '') {
+orderSchema.methods.updateStatus = function(newStatus, updatedBy = null, notes = '', session = null) {
   const oldStatus = this.status;
   this.status = newStatus;
   
@@ -690,7 +690,8 @@ orderSchema.methods.updateStatus = function(newStatus, updatedBy = null, notes =
       break;
   }
   
-  return this.save();
+  // Return the document without saving - let the caller handle saving with proper session
+  return this;
 };
 
 /**
@@ -973,9 +974,48 @@ orderSchema.methods.updateZoneMainStatus = async function() {
   if (totalOrders === 1 && completedCount === 1) {
     // SPECIFIC FIX: Single shop order completed - should always be completed (HIGHEST PRIORITY)
     newStatus = 'completed';
+    console.log('🎯 SINGLE SHOP COMPLETED RULE APPLIED:', {
+      parentOrderNumber: this.orderNumber,
+      childOrderStatus: childOrders[0].status,
+      childOrderNumber: childOrders[0].orderNumber,
+      newParentStatus: newStatus
+    });
   } else if (totalOrders === 1 && readyCount === 1) {
     // SPECIFIC FIX: Single shop order ready - should be ready (HIGHEST PRIORITY)
     newStatus = 'ready';
+    console.log('🎯 SINGLE SHOP READY RULE APPLIED:', {
+      parentOrderNumber: this.orderNumber,
+      childOrderStatus: childOrders[0].status,
+      childOrderNumber: childOrders[0].orderNumber,
+      newParentStatus: newStatus
+    });
+  } else if (totalOrders === 1 && statusCounts.preparing === 1) {
+    // Single shop preparing
+    newStatus = 'preparing';
+    console.log('🎯 SINGLE SHOP PREPARING RULE APPLIED:', {
+      parentOrderNumber: this.orderNumber,
+      childOrderStatus: childOrders[0].status,
+      childOrderNumber: childOrders[0].orderNumber,
+      newParentStatus: newStatus
+    });
+  } else if (totalOrders === 1 && statusCounts.confirmed === 1) {
+    // Single shop confirmed
+    newStatus = 'confirmed';
+    console.log('🎯 SINGLE SHOP CONFIRMED RULE APPLIED:', {
+      parentOrderNumber: this.orderNumber,
+      childOrderStatus: childOrders[0].status,
+      childOrderNumber: childOrders[0].orderNumber,
+      newParentStatus: newStatus
+    });
+  } else if (totalOrders === 1 && statusCounts.cancelled === 1) {
+    // Single shop cancelled
+    newStatus = 'cancelled';
+    console.log('🎯 SINGLE SHOP CANCELLED RULE APPLIED:', {
+      parentOrderNumber: this.orderNumber,
+      childOrderStatus: childOrders[0].status,
+      childOrderNumber: childOrders[0].orderNumber,
+      newParentStatus: newStatus
+    });
   } else if (completedCount === totalOrders) {
     // All orders completed
     newStatus = 'completed';

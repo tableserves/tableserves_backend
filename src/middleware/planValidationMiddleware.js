@@ -223,12 +223,12 @@ class PlanValidationMiddleware {
   static checkCategoryCreationLimit() {
     return async (req, res, next) => {
       try {
+        console.log(`🔍 CATEGORY LIMIT CHECK - User: ${req.user.id}, Role: ${req.user.role}, Params:`, req.params);
+        
         if (req.user.role === 'admin') {
           console.log(`✅ Admin user ${req.user.id} bypassing category creation limit`);
           return next();
         }
-
-        console.log(`🔍 Checking category creation limit for user ${req.user.id}`);
         
         const userPlan = await this.getUserPlan(req.user.id);
         const { plan } = userPlan;
@@ -247,54 +247,51 @@ class PlanValidationMiddleware {
           return next(); // Unlimited
         }
 
-        // Count current categories
+        // Count current categories - FIXED LOGIC
         let currentCategoryCount = 0;
         const { ownerType, ownerId } = req.params;
 
-        // For zone shop users, we need to count their specific shop's categories
-        if (req.user.role === 'zone_shop' || req.user.role === 'zone_vendor') {
-          // Find the zone shop this user owns
-          const zoneShop = await ZoneShop.findOne({ ownerId: req.user.id });
-          if (zoneShop) {
+        console.log(`🔍 Counting categories for ${ownerType} ${ownerId}`);
+
+        // Always use the ownerType and ownerId from params for counting
+        switch (ownerType) {
+          case 'restaurant':
             currentCategoryCount = await MenuCategory.countDocuments({ 
-              shopId: zoneShop._id 
+              restaurantId: ownerId 
             });
-            console.log(`📊 Zone shop ${zoneShop._id} category count: ${currentCategoryCount}`);
-          }
-        } else {
-          // For other users, use the existing logic
-          switch (ownerType) {
-            case 'restaurant':
-              currentCategoryCount = await MenuCategory.countDocuments({ 
-                restaurantId: ownerId 
-              });
-              break;
-            case 'zone':
-              currentCategoryCount = await MenuCategory.countDocuments({ 
-                zoneId: ownerId 
-              });
-              break;
-            case 'shop':
-              currentCategoryCount = await MenuCategory.countDocuments({ 
-                shopId: ownerId 
-              });
-              break;
-          }
+            break;
+          case 'zone':
+            currentCategoryCount = await MenuCategory.countDocuments({ 
+              zoneId: ownerId 
+            });
+            break;
+          case 'shop':
+            currentCategoryCount = await MenuCategory.countDocuments({ 
+              shopId: ownerId 
+            });
+            console.log(`📊 Shop ${ownerId} category count: ${currentCategoryCount}`);
+            break;
+          default:
+            throw new APIError('Invalid owner type', 400);
         }
 
-        console.log(`📊 Current usage for ${ownerType} ${ownerId}:`, {
+        console.log(`📊 LIMIT CHECK RESULT:`, {
+          ownerType,
+          ownerId,
           currentCategories: currentCategoryCount,
           maxCategories: maxCategories,
-          canCreate: currentCategoryCount < maxCategories
+          canCreate: currentCategoryCount < maxCategories,
+          userRole: req.user.role,
+          planName: plan.planName
         });
 
         if (currentCategoryCount >= maxCategories) {
-          const errorMsg = `Category creation limit reached. Your ${plan.planName} plan allows ${maxCategories} categor${maxCategories > 1 ? 'ies' : 'y'}. Please upgrade your plan to create more categories.`;
-          console.log(`❌ ${errorMsg}`);
+          const errorMsg = `Category creation limit reached. Your ${plan.planName} plan allows ${maxCategories} categor${maxCategories > 1 ? 'ies' : 'y'}. You currently have ${currentCategoryCount}. Please upgrade your plan to create more categories.`;
+          console.log(`❌ BLOCKING CATEGORY CREATION: ${errorMsg}`);
           throw new APIError(errorMsg, 403);
         }
 
-        console.log(`✅ Category creation allowed for user ${req.user.id}`);
+        console.log(`✅ ALLOWING CATEGORY CREATION for user ${req.user.id}`);
         req.userPlan = userPlan;
         req.currentUsage = { categories: currentCategoryCount };
 

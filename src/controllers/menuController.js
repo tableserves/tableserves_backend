@@ -348,10 +348,15 @@ class MenuController {
     const { ownerType, ownerId } = req.params;
     const { name, description, sortOrder, settings, availability, tags, image } = req.body;
 
-    console.log('Menu category creation data received:', { 
-      name, description, sortOrder, settings, availability, tags, image,
-      fullBody: req.body 
-    }); // Debug log
+    console.log('🍽️ CATEGORY CREATION REQUEST:', { 
+      user: req.user.id,
+      role: req.user.role,
+      ownerType,
+      ownerId,
+      name,
+      userPlan: req.userPlan ? req.userPlan.plan.planName : 'No plan info',
+      currentUsage: req.currentUsage
+    });
 
     await this.checkOwnerPermissions(req, ownerType, ownerId);
 

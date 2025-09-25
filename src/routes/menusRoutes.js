@@ -261,6 +261,12 @@ addValidationMiddleware(
   'post',
   '/:ownerType/:ownerId/categories',
   [
+    (req, res, next) => {
+      console.log('🔥 MIDDLEWARE CHECKPOINT: Category creation route hit');
+      console.log('User:', req.user?.id, 'Role:', req.user?.role);
+      console.log('Params:', req.params);
+      next();
+    },
     PlanValidationMiddleware ? PlanValidationMiddleware.checkCategoryCreationLimit() : (req, res, next) => next(),
     ...getValidation('validateObjectId', 'ownerId'),
     ...getValidation('createMenuCategory'),

@@ -288,11 +288,19 @@ class MultiShopOrderTrackingService {
 
         const oldStatus = shopOrder.status;
         
-        // Update shop order status
-        await shopOrder.updateStatus(newStatus, updatedBy, additionalData.notes || '');
+        // Update shop order status (without saving yet)
+        shopOrder.updateStatus(newStatus, updatedBy, additionalData.notes || '', session);
         
         // CRITICAL: Ensure shop order is saved with new status BEFORE parent update
         await shopOrder.save({ session });
+        
+        logger.debug('Shop order status updated and saved', {
+          shopOrderId,
+          shopOrderNumber: shopOrder.orderNumber,
+          oldStatus,
+          newStatus,
+          updatedBy
+        });
 
         // Find and update parent order
         const parentOrder = await Order.findById(shopOrder.parentOrderId).session(session);

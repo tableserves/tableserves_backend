@@ -464,7 +464,8 @@ class ZoneOrderSplittingService {
       }
 
       const oldStatus = shopOrder.status;
-      await shopOrder.updateStatus(newStatus, updatedBy);
+      shopOrder.updateStatus(newStatus, updatedBy);
+      await shopOrder.save();
 
       // Check if we need to update main order status
       const mainOrder = await Order.findById(shopOrder.parentOrderId);
@@ -618,7 +619,8 @@ class ZoneOrderSplittingService {
           await mainOrder.save();
         } else {
           // Fallback to simple status update
-          await mainOrder.updateStatus(newMainStatus, 'system');
+          mainOrder.updateStatus(newMainStatus, 'system');
+          await mainOrder.save();
         }
         
         console.log('✅ Main order status updated successfully:', {
