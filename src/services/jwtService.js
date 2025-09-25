@@ -39,7 +39,7 @@ const generateAccessToken = (payload) => {
       accessTokenPayload,
       process.env.JWT_SECRET,
       {
-        // expiresIn: process.env.JWT_EXPIRE || '15m', // Removed expiration
+        expiresIn: process.env.JWT_EXPIRE || '3y', // Re-enabled expiration
         issuer: 'tableserve-api',
         audience: 'tableserve-client'
       }
@@ -73,7 +73,7 @@ const generateRefreshToken = (payload) => {
       refreshTokenPayload,
       process.env.JWT_REFRESH_SECRET,
       {
-        // expiresIn: process.env.JWT_REFRESH_EXPIRE || '7d', // Removed expiration
+        expiresIn: process.env.JWT_REFRESH_EXPIRE || '3y', // Re-enabled expiration
         issuer: 'tableserve-api',
         audience: 'tableserve-client'
       }

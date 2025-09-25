@@ -520,6 +520,130 @@ class PaymentController {
       }
     }
 
+    // For zone admins, also update their zone's subscription
+    if (user.role === 'zone_admin') {
+      try {
+        const Zone = require('../models/Zone');
+        const Subscription = require('../models/Subscription');
+
+        // Find the zone owned by this user
+        const zone = await Zone.findOne({ ownerId: userId });
+
+        if (zone) {
+          // Create or update subscription for the zone
+          let subscription = await Subscription.findById(zone.subscriptionId);
+
+          if (!subscription) {
+            // Create new subscription if none exists
+            subscription = new Subscription({
+              userId: userId,
+              planKey: `${payment.planId.planType}_${payment.planId.key}`,
+              planType: payment.planId.planType,
+              planName: payment.planId.name,
+              features: payment.planId.features || {},
+              limits: payment.planId.limits || {},
+              pricing: {
+                amount: payment.planId.price,
+                currency: payment.planId.currency || 'INR',
+                interval: 'monthly',
+                trialDays: 0
+              },
+              status: 'active',
+              startDate: planDates.startDate,
+              endDate: planDates.endDate,
+              usage: {
+                currentTables: 0,
+                currentShops: 0,
+                currentVendors: 0,
+                currentCategories: 0,
+                currentMenuItems: 0,
+                currentUsers: 1,
+                ordersThisMonth: 0,
+                storageUsedGB: 0,
+                lastUsageUpdate: new Date()
+              },
+              payment: {
+                paymentHistory: [{
+                  paymentId: payment._id,
+                  amount: payment.totalAmount,
+                  currency: payment.planId.currency || 'INR',
+                  status: 'paid',
+                  paidAt: new Date(),
+                  razorpayPaymentId: payment.razorpayPaymentId,
+                  razorpayOrderId: payment.razorpayOrderId
+                }]
+              },
+              notes: []
+            });
+
+            await subscription.save();
+
+            // Link subscription to zone
+            zone.subscriptionId = subscription._id;
+          } else {
+            // Update existing subscription
+            subscription.planKey = `${payment.planId.planType}_${payment.planId.key}`;
+            subscription.planName = payment.planId.name;
+            subscription.features = payment.planId.features || {};
+            subscription.limits = payment.planId.limits || {};
+            subscription.pricing.amount = payment.planId.price;
+            subscription.status = 'active';
+            subscription.startDate = planDates.startDate;
+            subscription.endDate = planDates.endDate;
+
+            // Add payment to history
+            subscription.payment.paymentHistory.push({
+              paymentId: payment._id,
+              amount: payment.totalAmount,
+              currency: payment.planId.currency || 'INR',
+              status: 'paid',
+              paidAt: new Date(),
+              razorpayPaymentId: payment.razorpayPaymentId,
+              razorpayOrderId: payment.razorpayOrderId
+            });
+
+            await subscription.save();
+          }
+
+          // Update zone's subscription plan field for frontend compatibility
+          let subscriptionPlan = 'free';
+          switch (payment.planId.key) {
+            case 'enterprise':
+            case 'premium':
+              subscriptionPlan = 'premium';
+              break;
+            case 'professional':
+            case 'advanced':
+              subscriptionPlan = 'advanced';
+              break;
+            case 'starter':
+            case 'basic':
+              subscriptionPlan = 'basic';
+              break;
+            default:
+              subscriptionPlan = 'free';
+              break;
+          }
+
+          zone.subscriptionPlan = subscriptionPlan;
+          await zone.save();
+
+          console.log('✅ Zone subscription updated:', {
+            zoneId: zone._id,
+            zoneName: zone.name,
+            subscriptionId: subscription._id,
+            planKey: subscription.planKey,
+            subscriptionPlan: subscriptionPlan
+          });
+        } else {
+          console.warn('⚠️ Zone not found for zone admin:', userId);
+        }
+      } catch (error) {
+        console.error('❌ Error updating zone subscription:', error);
+        // Don't fail the payment verification if zone update fails
+      }
+    }
+
     logger.info('Payment verified and plan activated', {
       userId,
       planId: payment.planId._id,
@@ -731,6 +855,130 @@ class PaymentController {
               } catch (error) {
                 console.error('❌ Error updating restaurant subscription via webhook:', error);
                 // Don't fail the webhook processing if restaurant update fails
+              }
+            }
+
+            // For zone admins, also update their zone's subscription via webhook
+            if (user.role === 'zone_admin') {
+              try {
+                const Zone = require('../models/Zone');
+                const Subscription = require('../models/Subscription');
+
+                // Find the zone owned by this user
+                const zone = await Zone.findOne({ ownerId: user._id });
+
+                if (zone) {
+                  // Create or update subscription for the zone
+                  let subscription = await Subscription.findById(zone.subscriptionId);
+
+                  if (!subscription) {
+                    // Create new subscription if none exists
+                    subscription = new Subscription({
+                      userId: user._id,
+                      planKey: `${payment.planId.planType}_${payment.planId.key}`,
+                      planType: payment.planId.planType,
+                      planName: payment.planId.name,
+                      features: payment.planId.features || {},
+                      limits: payment.planId.limits || {},
+                      pricing: {
+                        amount: payment.planId.price,
+                        currency: payment.planId.currency || 'INR',
+                        interval: 'monthly',
+                        trialDays: 0
+                      },
+                      status: 'active',
+                      startDate: payment.planStartDate,
+                      endDate: payment.planEndDate,
+                      usage: {
+                        currentTables: 0,
+                        currentShops: 0,
+                        currentVendors: 0,
+                        currentCategories: 0,
+                        currentMenuItems: 0,
+                        currentUsers: 1,
+                        ordersThisMonth: 0,
+                        storageUsedGB: 0,
+                        lastUsageUpdate: new Date()
+                      },
+                      payment: {
+                        paymentHistory: [{
+                          paymentId: payment._id,
+                          amount: payment.totalAmount,
+                          currency: payment.planId.currency || 'INR',
+                          status: 'paid',
+                          paidAt: new Date(),
+                          razorpayPaymentId: payment.razorpayPaymentId,
+                          razorpayOrderId: payment.razorpayOrderId
+                        }]
+                      },
+                      notes: []
+                    });
+
+                    await subscription.save();
+
+                    // Link subscription to zone
+                    zone.subscriptionId = subscription._id;
+                  } else {
+                    // Update existing subscription
+                    subscription.planKey = `${payment.planId.planType}_${payment.planId.key}`;
+                    subscription.planName = payment.planId.name;
+                    subscription.features = payment.planId.features || {};
+                    subscription.limits = payment.planId.limits || {};
+                    subscription.pricing.amount = payment.planId.price;
+                    subscription.status = 'active';
+                    subscription.startDate = payment.planStartDate;
+                    subscription.endDate = payment.planEndDate;
+
+                    // Add payment to history
+                    subscription.payment.paymentHistory.push({
+                      paymentId: payment._id,
+                      amount: payment.totalAmount,
+                      currency: payment.planId.currency || 'INR',
+                      status: 'paid',
+                      paidAt: new Date(),
+                      razorpayPaymentId: payment.razorpayPaymentId,
+                      razorpayOrderId: payment.razorpayOrderId
+                    });
+
+                    await subscription.save();
+                  }
+
+                  // Update zone's subscription plan field for frontend compatibility
+                  let subscriptionPlan = 'free';
+                  switch (payment.planId.key) {
+                    case 'enterprise':
+                    case 'premium':
+                      subscriptionPlan = 'premium';
+                      break;
+                    case 'professional':
+                    case 'advanced':
+                      subscriptionPlan = 'advanced';
+                      break;
+                    case 'starter':
+                    case 'basic':
+                      subscriptionPlan = 'basic';
+                      break;
+                    default:
+                      subscriptionPlan = 'free';
+                      break;
+                  }
+
+                  zone.subscriptionPlan = subscriptionPlan;
+                  await zone.save();
+
+                  console.log('✅ Zone subscription updated via webhook:', {
+                    zoneId: zone._id,
+                    zoneName: zone.name,
+                    subscriptionId: subscription._id,
+                    planKey: subscription.planKey,
+                    subscriptionPlan: subscriptionPlan
+                  });
+                } else {
+                  console.warn('⚠️ Zone not found for zone admin via webhook:', user._id);
+                }
+              } catch (error) {
+                console.error('❌ Error updating zone subscription via webhook:', error);
+                // Don't fail the webhook processing if zone update fails
               }
             }
           }
