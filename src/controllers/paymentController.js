@@ -307,6 +307,11 @@ class PaymentController {
           name: plan.name,
           type: plan.planType,
           price: plan.price
+        },
+        user: {
+          name: user.profile?.name || user.email.split('@')[0],
+          email: user.email,
+          contact: user.phone || ''
         }
       },
       message: 'Payment order created successfully'
