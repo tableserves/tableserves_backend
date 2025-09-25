@@ -202,9 +202,11 @@ class PaymentController {
     const totalAmount = amount + taxAmount;
     console.log('💰 Payment amounts calculated:', { amount, taxAmount, totalAmount });
 
-    // Generate unique receipt
-    const receipt = `plan_purchase_${userId}_${Date.now()}`;
-    console.log('🧾 Receipt generated:', receipt);
+    // Generate unique receipt (max 40 characters for Razorpay)
+    const timestamp = Date.now().toString().slice(-8); // Last 8 digits
+    const userIdShort = userId.toString().slice(-8); // Last 8 characters of user ID
+    const receipt = `plan_${userIdShort}_${timestamp}`;
+    console.log('🧾 Receipt generated:', receipt, `(${receipt.length} chars)`);
 
     // Create Razorpay order
     console.log('🔄 Creating Razorpay order...');
@@ -238,11 +240,23 @@ class PaymentController {
       });
 
       // Check if it's an authentication error
-      if (razorpayError.statusCode === 400 || razorpayError.statusCode === 401) {
-        throw new APIError(
-          'Payment gateway configuration error. Please contact support or configure valid Razorpay credentials.',
-          400
-        );
+      if (razorpayError.statusCode === 401) {
+        // Authentication failed
+        if (process.env.NODE_ENV === 'development') {
+          throw new APIError(
+            'Razorpay authentication failed. For development, you can enable mock payments by setting VITE_MOCK_PAYMENTS=true in your .env file, or use valid test credentials.',
+            400
+          );
+        } else {
+          throw new APIError(
+            'Payment gateway configuration error. Please contact support or configure valid Razorpay credentials.',
+            400
+          );
+        }
+      } else if (razorpayError.statusCode === 400) {
+        // Bad request - show specific validation error
+        const errorDescription = razorpayError.error?.description || razorpayError.description || 'Invalid request data';
+        throw new APIError(`Payment order validation failed: ${errorDescription}`, 400);
       }
 
       throw new APIError(`Payment order creation failed: ${razorpayError.message || 'Unknown error'}`, 400);
