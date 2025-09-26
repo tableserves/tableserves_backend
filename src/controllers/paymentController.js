@@ -462,13 +462,13 @@ class PaymentController {
               },
               payment: {
                 paymentHistory: [{
-                  paymentId: payment._id,
+                  date: new Date(),
                   amount: payment.totalAmount,
                   currency: payment.planId.currency || 'INR',
-                  status: 'paid',
-                  paidAt: new Date(),
-                  razorpayPaymentId: payment.razorpayPaymentId,
-                  razorpayOrderId: payment.razorpayOrderId
+                  status: 'completed',
+                  
+                  transactionId: payment.razorpayPaymentId,
+                  description: `Plan upgrade to ${payment.planId.name}`
                 }]
               },
               notes: []
@@ -493,13 +493,13 @@ class PaymentController {
 
             // Add payment to history
             subscription.payment.paymentHistory.push({
-              paymentId: payment._id,
+              date: new Date(),
               amount: payment.totalAmount,
               currency: payment.planId.currency || 'INR',
-              status: 'paid',
-              paidAt: new Date(),
-              razorpayPaymentId: payment.razorpayPaymentId,
-              razorpayOrderId: payment.razorpayOrderId
+              status: 'completed',
+              
+              transactionId: payment.razorpayPaymentId,
+                  description: `Plan upgrade to ${payment.planId.name}`
             });
 
             await subscription.save();
@@ -609,13 +609,13 @@ class PaymentController {
               },
               payment: {
                 paymentHistory: [{
-                  paymentId: payment._id,
+                  date: new Date(),
                   amount: payment.totalAmount,
                   currency: payment.planId.currency || 'INR',
-                  status: 'paid',
-                  paidAt: new Date(),
-                  razorpayPaymentId: payment.razorpayPaymentId,
-                  razorpayOrderId: payment.razorpayOrderId
+                  status: 'completed',
+                  
+                  transactionId: payment.razorpayPaymentId,
+                  description: `Plan upgrade to ${payment.planId.name}`
                 }]
               },
               notes: []
@@ -640,13 +640,13 @@ class PaymentController {
 
             // Add payment to history
             subscription.payment.paymentHistory.push({
-              paymentId: payment._id,
+              date: new Date(),
               amount: payment.totalAmount,
               currency: payment.planId.currency || 'INR',
-              status: 'paid',
-              paidAt: new Date(),
-              razorpayPaymentId: payment.razorpayPaymentId,
-              razorpayOrderId: payment.razorpayOrderId
+              status: 'completed',
+              
+              transactionId: payment.razorpayPaymentId,
+                  description: `Plan upgrade to ${payment.planId.name}`
             });
 
             await subscription.save();
@@ -700,14 +700,14 @@ class PaymentController {
     logger.info('Payment verified and plan activated', {
       userId,
       planId: payment.planId._id,
-      paymentId: payment._id,
+      date: new Date(),
       expiryDate: planDates.endDate
     });
 
     res.status(200).json({
       success: true,
       data: {
-        paymentId: payment._id,
+        date: new Date(),
         plan: {
           id: payment.planId._id,
           name: payment.planId.name,
@@ -838,13 +838,13 @@ class PaymentController {
                       },
                       payment: {
                         paymentHistory: [{
-                          paymentId: payment._id,
+                          date: new Date(),
                           amount: payment.totalAmount,
                           currency: payment.planId.currency || 'INR',
-                          status: 'paid',
-                          paidAt: new Date(),
-                          razorpayPaymentId: payment.razorpayPaymentId,
-                          razorpayOrderId: payment.razorpayOrderId
+                          status: 'completed',
+                          
+                          transactionId: payment.razorpayPaymentId,
+                  description: `Plan upgrade to ${payment.planId.name}`
                         }]
                       },
                       notes: []
@@ -867,13 +867,13 @@ class PaymentController {
 
                     // Add payment to history
                     subscription.payment.paymentHistory.push({
-                      paymentId: payment._id,
+                      date: new Date(),
                       amount: payment.totalAmount,
                       currency: payment.planId.currency || 'INR',
-                      status: 'paid',
-                      paidAt: new Date(),
-                      razorpayPaymentId: payment.razorpayPaymentId,
-                      razorpayOrderId: payment.razorpayOrderId
+                      status: 'completed',
+                      
+                      transactionId: payment.razorpayPaymentId,
+                  description: `Plan upgrade to ${payment.planId.name}`
                     });
 
                     await subscription.save();
@@ -969,13 +969,13 @@ class PaymentController {
                       },
                       payment: {
                         paymentHistory: [{
-                          paymentId: payment._id,
+                          date: new Date(),
                           amount: payment.totalAmount,
                           currency: payment.planId.currency || 'INR',
-                          status: 'paid',
-                          paidAt: new Date(),
-                          razorpayPaymentId: payment.razorpayPaymentId,
-                          razorpayOrderId: payment.razorpayOrderId
+                          status: 'completed',
+                          
+                          transactionId: payment.razorpayPaymentId,
+                  description: `Plan upgrade to ${payment.planId.name}`
                         }]
                       },
                       notes: []
@@ -998,13 +998,13 @@ class PaymentController {
 
                     // Add payment to history
                     subscription.payment.paymentHistory.push({
-                      paymentId: payment._id,
+                      date: new Date(),
                       amount: payment.totalAmount,
                       currency: payment.planId.currency || 'INR',
-                      status: 'paid',
-                      paidAt: new Date(),
-                      razorpayPaymentId: payment.razorpayPaymentId,
-                      razorpayOrderId: payment.razorpayOrderId
+                      status: 'completed',
+                      
+                      transactionId: payment.razorpayPaymentId,
+                  description: `Plan upgrade to ${payment.planId.name}`
                     });
 
                     await subscription.save();
@@ -1078,7 +1078,7 @@ class PaymentController {
         await payment.save();
 
         logger.info('Payment marked as failed via webhook', {
-          paymentId: payment._id,
+          date: new Date(),
           reason: payment.failureReason
         });
       }
