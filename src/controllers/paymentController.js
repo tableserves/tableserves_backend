@@ -396,20 +396,42 @@ class PaymentController {
     const user = await User.findById(userId);
     await user.activatePlan(payment.planId._id, planDates.endDate, payment._id);
 
+    console.log('🔍 User role for subscription update:', {
+      userId: userId,
+      userRole: user.role,
+      planType: payment.planId.planType,
+      planKey: payment.planId.key
+    });
+
     // For restaurant owners, also update their restaurant's subscription
     if (user.role === 'restaurant_owner') {
+      console.log('🔄 Processing restaurant owner subscription update...');
       try {
         const Restaurant = require('../models/Restaurant');
         const Subscription = require('../models/Subscription');
 
         // Find the restaurant owned by this user
         const restaurant = await Restaurant.findOne({ ownerId: userId });
+        console.log('🔍 Restaurant lookup result:', {
+          userId: userId,
+          restaurantFound: !!restaurant,
+          restaurantId: restaurant?._id,
+          restaurantName: restaurant?.name,
+          existingSubscriptionId: restaurant?.subscriptionId
+        });
 
         if (restaurant) {
           // Create or update subscription for the restaurant
           let subscription = await Subscription.findById(restaurant.subscriptionId);
+          console.log('🔍 Restaurant subscription check:', {
+            subscriptionId: restaurant.subscriptionId,
+            subscriptionExists: !!subscription,
+            currentPlanKey: subscription?.planKey,
+            currentStatus: subscription?.status
+          });
 
           if (!subscription) {
+            console.log('📝 Creating new subscription for restaurant...');
             // Create new subscription if none exists
             subscription = new Subscription({
               userId: userId,
@@ -453,10 +475,12 @@ class PaymentController {
             });
 
             await subscription.save();
+            console.log('✅ New restaurant subscription created:', subscription._id);
 
             // Link subscription to restaurant
             restaurant.subscriptionId = subscription._id;
           } else {
+            console.log('📝 Updating existing restaurant subscription...');
             // Update existing subscription
             subscription.planKey = `${payment.planId.planType}_${payment.planId.key}`;
             subscription.planName = payment.planId.name;
@@ -479,6 +503,12 @@ class PaymentController {
             });
 
             await subscription.save();
+            console.log('✅ Restaurant subscription updated:', {
+              subscriptionId: subscription._id,
+              newPlanKey: subscription.planKey,
+              newStatus: subscription.status,
+              newEndDate: subscription.endDate
+            });
           }
 
           // Update restaurant's subscription plan field for frontend compatibility
@@ -522,18 +552,33 @@ class PaymentController {
 
     // For zone admins, also update their zone's subscription
     if (user.role === 'zone_admin') {
+      console.log('🔄 Processing zone admin subscription update...');
       try {
         const Zone = require('../models/Zone');
         const Subscription = require('../models/Subscription');
 
         // Find the zone owned by this user
-        const zone = await Zone.findOne({ ownerId: userId });
+        const zone = await Zone.findOne({ adminId: userId });
+        console.log('🔍 Zone lookup result:', {
+          userId: userId,
+          zoneFound: !!zone,
+          zoneId: zone?._id,
+          zoneName: zone?.name,
+          existingSubscriptionId: zone?.subscriptionId
+        });
 
         if (zone) {
           // Create or update subscription for the zone
           let subscription = await Subscription.findById(zone.subscriptionId);
+          console.log('🔍 Existing subscription check:', {
+            subscriptionId: zone.subscriptionId,
+            subscriptionExists: !!subscription,
+            currentPlanKey: subscription?.planKey,
+            currentStatus: subscription?.status
+          });
 
           if (!subscription) {
+            console.log('📝 Creating new subscription for zone...');
             // Create new subscription if none exists
             subscription = new Subscription({
               userId: userId,
@@ -577,10 +622,12 @@ class PaymentController {
             });
 
             await subscription.save();
+            console.log('✅ New subscription created:', subscription._id);
 
             // Link subscription to zone
             zone.subscriptionId = subscription._id;
           } else {
+            console.log('📝 Updating existing subscription...');
             // Update existing subscription
             subscription.planKey = `${payment.planId.planType}_${payment.planId.key}`;
             subscription.planName = payment.planId.name;
@@ -603,6 +650,12 @@ class PaymentController {
             });
 
             await subscription.save();
+            console.log('✅ Subscription updated:', {
+              subscriptionId: subscription._id,
+              newPlanKey: subscription.planKey,
+              newStatus: subscription.status,
+              newEndDate: subscription.endDate
+            });
           }
 
           // Update zone's subscription plan field for frontend compatibility
@@ -736,12 +789,19 @@ class PaymentController {
 
             // For restaurant owners, also update their restaurant's subscription
             if (user.role === 'restaurant_owner') {
+              console.log('🔄 Processing restaurant owner subscription update via webhook...');
               try {
                 const Restaurant = require('../models/Restaurant');
                 const Subscription = require('../models/Subscription');
 
                 // Find the restaurant owned by this user
                 const restaurant = await Restaurant.findOne({ ownerId: user._id });
+                console.log('🔍 Restaurant lookup result (webhook):', {
+                  userId: user._id,
+                  restaurantFound: !!restaurant,
+                  restaurantId: restaurant?._id,
+                  restaurantName: restaurant?.name
+                });
 
                 if (restaurant) {
                   // Create or update subscription for the restaurant
@@ -860,12 +920,19 @@ class PaymentController {
 
             // For zone admins, also update their zone's subscription via webhook
             if (user.role === 'zone_admin') {
+              console.log('🔄 Processing zone admin subscription update via webhook...');
               try {
                 const Zone = require('../models/Zone');
                 const Subscription = require('../models/Subscription');
 
                 // Find the zone owned by this user
-                const zone = await Zone.findOne({ ownerId: user._id });
+                const zone = await Zone.findOne({ adminId: user._id });
+                console.log('🔍 Zone lookup result (webhook):', {
+                  userId: user._id,
+                  zoneFound: !!zone,
+                  zoneId: zone?._id,
+                  zoneName: zone?.name
+                });
 
                 if (zone) {
                   // Create or update subscription for the zone
