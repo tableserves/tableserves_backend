@@ -939,6 +939,21 @@ restaurantSchema.pre('save', async function(next) {
       }
     }
     
+    // Sync ownerName with user profile name if not set or if ownerId changed
+    if (this.isNew || this.isModified('ownerId') || !this.ownerName) {
+      try {
+        const User = require('./User');
+        const owner = await User.findById(this.ownerId);
+        if (owner && owner.profile?.name) {
+          this.ownerName = owner.profile.name;
+        } else if (owner && owner.username) {
+          this.ownerName = owner.username;
+        }
+      } catch (error) {
+        console.warn('Failed to sync owner name from user profile:', error.message);
+      }
+    }
+    
     // Ensure at least one table exists
     if (this.isNew && this.tables.length === 0) {
       // Use a temporary slug for QR generation if slug is not yet set

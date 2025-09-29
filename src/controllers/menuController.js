@@ -427,7 +427,9 @@ class MenuController {
 
   static getCategories = catchAsync(async (req, res) => {
     const { ownerType, ownerId } = req.params;
-    const { page = 1, limit = 20, search } = req.query;
+    // Set a higher default limit and allow unlimited for admin users
+    const defaultLimit = req.user?.role === 'admin' ? 1000 : 100;
+    const { page = 1, limit = defaultLimit, search } = req.query;
     const skip = (page - 1) * limit;
 
     // Check permissions only if user is authenticated
@@ -567,7 +569,9 @@ class MenuController {
   // Item Methods
   static getItems = catchAsync(async (req, res) => {
     const { ownerType, ownerId } = req.params;
-    const { page = 1, limit = 20, categoryId, search } = req.query;
+    // Set a higher default limit and allow unlimited for admin users
+    const defaultLimit = req.user?.role === 'admin' ? 1000 : 100;
+    const { page = 1, limit = defaultLimit, categoryId, search } = req.query;
     const skip = (page - 1) * limit;
 
     // Check permissions only if user is authenticated

@@ -340,9 +340,48 @@ const getAllTableServeRatings = catchAsync(async (req, res) => {
   });
 });
 
+/**
+ * Get public TableServe platform statistics (no authentication required)
+ */
+const getPublicTableServeStatistics = catchAsync(async (req, res) => {
+  // Get platform statistics without date filters for public view
+  const stats = await TableServeRating.getPlatformStatistics({});
+
+  res.status(200).json({
+    success: true,
+    data: stats
+  });
+});
+
+/**
+ * Get recent public TableServe ratings (no authentication required)
+ */
+const getPublicRecentTableServeRatings = catchAsync(async (req, res) => {
+  const { limit = 8 } = req.query;
+
+  // Get recent ratings (public only)
+  const ratings = await TableServeRating.getRecentRatings(parseInt(limit));
+
+  // Format for public display (only include public info)
+  const formattedRatings = ratings.map(rating => ({
+    id: rating._id,
+    customerName: rating.customer.name,
+    serviceRating: rating.serviceRating,
+    serviceFeedback: rating.serviceFeedback,
+    submittedAt: rating.createdAt
+  }));
+
+  res.status(200).json({
+    success: true,
+    data: formattedRatings
+  });
+});
+
 module.exports = {
   submitTableServeRating,
   getTableServeStatistics,
   getRecentTableServeRatings,
-  getAllTableServeRatings
+  getAllTableServeRatings,
+  getPublicTableServeStatistics,
+  getPublicRecentTableServeRatings
 };

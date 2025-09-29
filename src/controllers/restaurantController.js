@@ -929,6 +929,66 @@ const updateRestaurantCredentials = catchAsync(async (req, res) => {
   });
 });
 
+/**
+ * Update restaurant owner password
+ */
+const updateRestaurantPassword = catchAsync(async (req, res) => {
+  const { id } = req.params;
+  const { newPassword } = req.body;
+  const userId = req.user.id;
+  const userRole = req.user.role;
+
+  // Validate input
+  if (!newPassword) {
+    throw new APIError('New password is required', 400);
+  }
+
+  // Validate password strength
+  const { validatePassword } = require('../utils/passwordUtils');
+  const passwordValidation = validatePassword(newPassword);
+  if (!passwordValidation.isValid) {
+    throw new APIError(`Password validation failed: ${passwordValidation.errors.join(', ')}`, 400);
+  }
+
+  // Find the restaurant
+  let query = { _id: id };
+  
+  // Non-admin users can only access their own restaurants
+  if (userRole !== 'admin') {
+    query.ownerId = userId;
+  }
+
+  const restaurant = await Restaurant.findOne(query);
+  if (!restaurant) {
+    throw new APIError('Restaurant not found or access denied', 404);
+  }
+
+  // Find the owner user
+  const ownerUser = await User.findById(restaurant.ownerId);
+  if (!ownerUser) {
+    throw new APIError('Restaurant owner not found', 404);
+  }
+
+  // Hash the new password
+  const { hashPassword } = require('../utils/passwordUtils');
+  const passwordHash = await hashPassword(newPassword);
+
+  // Update the owner's password
+  ownerUser.passwordHash = passwordHash;
+  await ownerUser.save();
+
+  loggerUtils.logAuth('Restaurant owner password updated', ownerUser._id, {
+    restaurantId: restaurant._id,
+    updatedBy: userId,
+    updatedByRole: userRole
+  });
+
+  res.status(200).json({
+    success: true,
+    message: 'Restaurant owner password updated successfully'
+  });
+});
+
 module.exports = {
   getAllRestaurants,
   getRestaurant,
@@ -942,5 +1002,6 @@ module.exports = {
   getRestaurantStats,
   getRestaurantBySlug,
   getRestaurantByIdPublic,
-  updateRestaurantCredentials
+  updateRestaurantCredentials,
+  updateRestaurantPassword
 };

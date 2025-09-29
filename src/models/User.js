@@ -683,6 +683,36 @@ userSchema.pre('save', function(next) {
   next();
 });
 
+// Post-save middleware to sync profile name with restaurant ownerName
+userSchema.post('save', async function(doc, next) {
+  try {
+    // Only sync if profile name was modified
+    if (this.isModified('profile.name') && this.profile?.name) {
+      // Check if this user is a restaurant owner
+      if (this.role === 'restaurant_owner' && this.businessType === 'restaurant') {
+        const Restaurant = require('./Restaurant');
+        
+        // Find all restaurants owned by this user
+        const restaurants = await Restaurant.find({ ownerId: this._id });
+        
+        // Update ownerName for all restaurants
+        for (const restaurant of restaurants) {
+          restaurant.ownerName = this.profile.name;
+          await restaurant.save();
+        }
+        
+        if (restaurants.length > 0) {
+          console.log(`🔄 Synced profile name '${this.profile.name}' to ${restaurants.length} restaurant(s) for user ${this._id}`);
+        }
+      }
+    }
+    next();
+  } catch (error) {
+    console.error('Error syncing user profile name to restaurants:', error);
+    next();
+  }
+});
+
 // Create and export model
 const User = mongoose.model('User', userSchema);
 

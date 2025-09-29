@@ -6,7 +6,9 @@ const {
   submitTableServeRating,
   getTableServeStatistics,
   getRecentTableServeRatings,
-  getAllTableServeRatings
+  getAllTableServeRatings,
+  getPublicTableServeStatistics,
+  getPublicRecentTableServeRatings
 } = require('../controllers/tableServeRatingController');
 
 const router = express.Router();
@@ -31,6 +33,24 @@ router.use(defaultRateLimiter);
  */
 router.post('/',
   wrapAsync(submitTableServeRating, 'submitTableServeRating')
+);
+
+/**
+ * @route GET /api/v1/tableserve-ratings/public-statistics
+ * @desc Get public TableServe platform statistics
+ * @access Public
+ */
+router.get('/public-statistics',
+  wrapAsync(getPublicTableServeStatistics, 'getPublicTableServeStatistics')
+);
+
+/**
+ * @route GET /api/v1/tableserve-ratings/public-recent
+ * @desc Get recent public TableServe ratings
+ * @access Public
+ */
+router.get('/public-recent',
+  wrapAsync(getPublicRecentTableServeRatings, 'getPublicRecentTableServeRatings')
 );
 
 /**

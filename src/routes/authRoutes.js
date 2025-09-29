@@ -279,11 +279,11 @@ router.post('/forgot-password',
 );
 
 /**
- * @route POST /api/v1/auth/reset-password
+ * @route POST /api/v1/auth/reset-password/:token
  * @desc Reset password with token
  * @access Public
  */
-router.post('/reset-password',
+router.post('/reset-password/:token',
   authRateLimiter,
   wrapAsync(resetPassword, 'resetPassword')
 );

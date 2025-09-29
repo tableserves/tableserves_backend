@@ -13,7 +13,7 @@ const orderPaymentService = require('../services/orderPaymentService');
 const getAllOrders = catchAsync(async (req, res) => {
   const { 
     page = 1, 
-    limit = 100, 
+    limit = 100000, 
     status, 
     restaurantId, 
     tableNumber, 

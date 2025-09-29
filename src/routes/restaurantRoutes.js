@@ -16,7 +16,8 @@ const {
   toggleRestaurantStatus,
   getRestaurantBySlug,
   getRestaurantByIdPublic,
-  updateRestaurantCredentials
+  updateRestaurantCredentials,
+  updateRestaurantPassword
 } = require('../controllers/restaurantController');
 
 const router = express.Router();
@@ -225,6 +226,24 @@ router.put('/:id/credentials',
   ValidationRules.validateObjectId('id'),
   handleValidation,
   wrapAsync(updateRestaurantCredentials, 'updateRestaurantCredentials')
+);
+
+/**
+ * @route PATCH /api/v1/restaurants/:id/password
+ * @desc Update restaurant owner password
+ * @access Private (admin, restaurant_owner - own restaurants only)
+ */
+router.patch('/:id/password',
+  authenticate,
+  authorize('admin', 'restaurant_owner'),
+  ValidationRules.validateObjectId('id'),
+  [
+    require('express-validator').body('newPassword')
+      .isLength({ min: 6 })
+      .withMessage('Password must be at least 6 characters long')
+  ],
+  handleValidation,
+  wrapAsync(updateRestaurantPassword, 'updateRestaurantPassword')
 );
 
 // Apply the enhanced error handling middleware
