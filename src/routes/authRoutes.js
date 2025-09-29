@@ -289,6 +289,66 @@ router.post('/reset-password/:token',
 );
 
 /**
+ * @route GET /api/v1/auth/debug-reset-token/:token
+ * @desc Debug endpoint to check if a reset token exists in the database
+ * @access Public (Development only)
+ */
+router.get('/debug-reset-token/:token',
+  wrapAsync(async (req, res) => {
+    const { token } = req.params;
+    
+    console.log('Debug reset token endpoint called with token:', {
+      tokenLength: token.length,
+      tokenPreview: token.substring(0, 10) + '...'
+    });
+    
+    // Hash the token
+    const { hashToken } = require('../services/jwtService');
+    const hashedToken = hashToken(token);
+    
+    console.log('Debug reset token: Hashed token', {
+      hashedTokenPreview: hashedToken.substring(0, 10) + '...'
+    });
+    
+    // Try to find user with this token
+    const user = await require('../models').User.findOne({
+      passwordResetToken: hashedToken
+    }).select('+passwordResetToken +passwordResetExpires');
+    
+    console.log('Debug reset token: Database lookup result', {
+      userFound: !!user,
+      userId: user ? user._id : null,
+      passwordResetToken: user ? user.passwordResetToken : null,
+      passwordResetExpires: user ? user.passwordResetExpires : null,
+      now: new Date()
+    });
+    
+    if (user) {
+      const isExpired = user.passwordResetExpires <= new Date();
+      res.status(200).json({
+        success: true,
+        message: 'Token found',
+        data: {
+          userId: user._id,
+          tokenFound: true,
+          isExpired,
+          expiresAt: user.passwordResetExpires,
+          now: new Date()
+        }
+      });
+    } else {
+      res.status(404).json({
+        success: false,
+        message: 'Token not found in database',
+        data: {
+          tokenFound: false
+        }
+      });
+    }
+  }, 'debugResetToken')
+);
+
+/**
  * @route POST /api/v1/auth/change-password
  * @desc Change password (authenticated user)
  * @access Private

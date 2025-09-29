@@ -53,26 +53,35 @@ const validatePassword = (password) => {
     return { isValid: false, errors };
   }
 
-  if (password.length < 6) {
-    errors.push('Password must be at least 6 characters long');
+  // Updated requirement: minimum 8 characters
+  if (password.length < 8) {
+    errors.push('Password must be at least 8 characters long');
   }
 
   if (password.length > 128) {
     errors.push('Password must be less than 128 characters long');
   }
 
-  // Simplified requirements - at least 2 of the following 4 criteria
-  let criteriaCount = 0;
+  // Check for required character types
+  const hasLowercase = /[a-z]/.test(password);
+  const hasUppercase = /[A-Z]/.test(password);
+  const hasNumber = /\d/.test(password);
+  const hasSpecialChar = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password);
 
-  if (/[a-z]/.test(password)) criteriaCount++;
-  if (/[A-Z]/.test(password)) criteriaCount++;
-  if (/\d/.test(password)) criteriaCount++;
-  if (/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) criteriaCount++;
+  if (!hasLowercase) {
+    errors.push('Password must contain at least one lowercase letter');
+  }
 
-  if (password.length >= 6 && password.length < 8 && criteriaCount < 3) {
-    errors.push('Password must contain at least 3 different character types (uppercase, lowercase, numbers, special characters)');
-  } else if (password.length >= 8 && criteriaCount < 2) {
-    errors.push('Password must contain at least 2 different character types (uppercase, lowercase, numbers, special characters)');
+  if (!hasUppercase) {
+    errors.push('Password must contain at least one uppercase letter');
+  }
+
+  if (!hasNumber) {
+    errors.push('Password must contain at least one number');
+  }
+
+  if (!hasSpecialChar) {
+    errors.push('Password must contain at least one special character');
   }
 
   const commonPasswords = [

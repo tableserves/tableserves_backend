@@ -798,14 +798,56 @@ const requestPasswordReset = catchAsync(async (req, res) => {
   try {
     const userFromDB = await User.findOne({ email: email.toLowerCase() });
     
+    // Log the email search result
+    console.log('requestPasswordReset: User search result', {
+      email: email.toLowerCase(),
+      userFound: !!userFromDB,
+      userId: userFromDB ? userFromDB._id : null
+    });
+    
     if (userFromDB) {
       const resetToken = generatePasswordResetToken(email);
+      
+      // Log the generated token
+      console.log('requestPasswordReset: Generated token', {
+        tokenLength: resetToken.token.length,
+        tokenPreview: resetToken.token.substring(0, 10) + '...',
+        hashedTokenLength: resetToken.hashedToken.length,
+        hashedTokenPreview: resetToken.hashedToken.substring(0, 10) + '...',
+        expiresAt: resetToken.expiresAt
+      });
       
       userFromDB.passwordResetToken = resetToken.hashedToken;
       userFromDB.passwordResetExpires = resetToken.expiresAt;
       await userFromDB.save();
-// Construct frontend URL - use environment variable if available, otherwise fallback to protocol + host
+      
+      // Log after saving
+      console.log('requestPasswordReset: Token saved to user', {
+        userId: userFromDB._id,
+        hashedTokenPreview: resetToken.hashedToken.substring(0, 10) + '...'
+      });
+      
+      // Log the generated tokens for debugging
+      logger.debug('Password reset token generated', { 
+        userId: userFromDB._id,
+        tokenLength: resetToken.token.length,
+   
+        tokenPreview: resetToken.token.substring(0, 10) + '...',
+        hashedTokenPreview: resetToken.hashedToken.substring(0, 10) + '...',
+        expiresAt: resetToken.expiresAt,
+      });
+      
+      // Construct frontend URL - use environment variable if available, otherwise fallback to protocol + host
       const frontendUrl = process.env.FRONTEND_URL || `${req.protocol}://${req.headers.host}`;
+      
+      // URL-encode the token for safe inclusion in the URL
+      const encodedToken = encodeURIComponent(resetToken.token);
+      
+      // Log the email content
+      console.log('requestPasswordReset: Sending email with reset link', {
+        email: email,
+        resetLink: `${frontendUrl}/reset-password/${encodedToken}`
+      });
       
       await notificationService.sendEmailNotification(email, {
         type: 'password_reset',
@@ -814,7 +856,7 @@ const requestPasswordReset = catchAsync(async (req, res) => {
 
 Please click on the following link, or paste this into your browser to complete the process:
 
-${frontendUrl}/reset-password/${resetToken.token}
+${frontendUrl}/reset-password/${encodedToken}
 
 If you did not request this, please ignore this email and your password will remain unchanged.
 `,
@@ -841,7 +883,36 @@ const resetPassword = catchAsync(async (req, res) => {
   const { token } = req.params;
   const { password, confirmPassword } = req.body;
 
-  if (!token || !password || !confirmPassword) {
+  // Log the raw token received from the request
+  console.log('ResetPassword: Raw token received from request:', {
+    tokenLength: token.length,
+    tokenPreview: token.substring(0, 10) + '...',
+    fullToken: token // Be careful with this in production logs
+  });
+
+  // Improved token decoding to handle potential double encoding issues
+  let decodedToken = token;
+  try {
+    // Handle potential double encoding by decoding until no change occurs
+    let previousToken;
+    do {
+      previousToken = decodedToken;
+      decodedToken = decodeURIComponent(decodedToken);
+    } while (decodedToken !== previousToken && decodedToken !== decodeURIComponent(decodedToken));
+    
+    console.log('ResetPassword: Token processed', {
+      originalToken: token,
+      finalToken: decodedToken,
+      wasModified: token !== decodedToken
+    });
+  } catch (decodeError) {
+    console.log('ResetPassword: Error processing token, using original', {
+      error: decodeError.message
+    });
+    decodedToken = token;
+  }
+
+  if (!decodedToken || !password || !confirmPassword) {
     throw new APIError('Token, password, and confirm password are required', 400);
   }
 
@@ -854,9 +925,33 @@ const resetPassword = catchAsync(async (req, res) => {
     throw new APIError(`Password validation failed: ${passwordValidation.errors.join(', ')}`, 400);
   }
 
- // Hash the token to match with the stored hashed token
+  // Log the received token for debugging
+  logger.debug('Password reset request received', { 
+    tokenLength: decodedToken.length,
+    tokenPreview: decodedToken.substring(0, 10) + '...',
+  });
+
+  // Hash the token to match with the stored hashed token
   const { hashToken } = require('../services/jwtService');
-  const hashedToken = hashToken(token);
+  const hashedToken = hashToken(decodedToken);
+
+  // Log the hashed token for debugging
+  logger.debug('Token hashed for database lookup', { 
+    hashedTokenPreview: hashedToken.substring(0, 10) + '...',
+  });
+
+  // First, let's try to find any user with this hashed token to see if it exists at all
+  const userWithToken = await User.findOne({
+    passwordResetToken: hashedToken
+  });
+  
+  console.log('ResetPassword: User lookup with hashed token', {
+    hashedTokenPreview: hashedToken.substring(0, 10) + '...',
+    userFound: !!userWithToken,
+    userId: userWithToken ? userWithToken._id : null,
+    passwordResetExpires: userWithToken ? userWithToken.passwordResetExpires : null,
+    now: new Date()
+  });
 
   // Find user with valid reset token
   const user = await User.findOne({
@@ -864,9 +959,34 @@ const resetPassword = catchAsync(async (req, res) => {
     passwordResetExpires: { $gt: Date.now() }
   });
 
+  // Log the search result for debugging
+  logger.debug('User lookup result', { 
+    userFound: !!user,
+    userId: user ? user._id : null,
+  });
 
   if (!user) {
-    throw new APIError('Invalid or expired reset token', 400);
+    // Check if token exists but is expired
+    if (userWithToken) {
+      if (userWithToken.passwordResetExpires <= Date.now()) {
+        logger.debug('Token found but expired', { 
+          userId: userWithToken._id,
+          expiredAt: userWithToken.passwordResetExpires,
+          now: new Date(),
+        });
+        throw new APIError('Reset token has expired. Please request a new password reset.', 400);
+      } else {
+        logger.debug('Token found and not expired, but user not found for other reasons', { 
+          userId: userWithToken._id,
+        });
+        throw new APIError('Invalid reset token', 400);
+      }
+    } else {
+      logger.debug('No user found with the provided token', { 
+        hashedTokenPreview: hashedToken.substring(0, 10) + '...',
+      });
+      throw new APIError('Invalid or expired reset token', 400);
+    }
   }
 
   // Update password

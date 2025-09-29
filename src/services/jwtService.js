@@ -271,7 +271,21 @@ const generateSecureToken = (length = 32) => {
  * @returns {string} - Hashed token
  */
 const hashToken = (token) => {
-  return crypto.createHash('sha256').update(token).digest('hex');
+  // Log the token being hashed for debugging
+  console.log('hashToken: Hashing token', {
+    tokenLength: token.length,
+    tokenPreview: token.substring(0, 10) + '...'
+  });
+  
+  const hashed = crypto.createHash('sha256').update(token).digest('hex');
+  
+  // Log the hashed result
+  console.log('hashToken: Hashed result', {
+    hashedLength: hashed.length,
+    hashedPreview: hashed.substring(0, 10) + '...'
+  });
+  
+  return hashed;
 };
 
 module.exports = {

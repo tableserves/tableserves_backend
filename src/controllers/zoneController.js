@@ -528,8 +528,8 @@ class ZoneController {
       id: shop._id,
       name: shop.name,
       ownerName: shop.ownerId?.profile?.name || 'Unknown',
-      ownerPhone: shop.ownerId?.phone || shop.contactInfo?.phone,
-      ownerEmail: shop.ownerId?.email || shop.contactInfo?.email,
+      ownerPhone: shop.ownerId?.phone || shop.contactInfo?.phone || 'Not provided',
+      ownerEmail: shop.ownerId?.email || shop.contactInfo?.email || 'Not provided',
       status: shop.status,
       loginCredentials: {
         username: shop.ownerId?.username || '',
