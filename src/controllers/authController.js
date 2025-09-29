@@ -854,11 +854,16 @@ const resetPassword = catchAsync(async (req, res) => {
     throw new APIError(`Password validation failed: ${passwordValidation.errors.join(', ')}`, 400);
   }
 
+ // Hash the token to match with the stored hashed token
+  const { hashToken } = require('../services/jwtService');
+  const hashedToken = hashToken(token);
+
   // Find user with valid reset token
   const user = await User.findOne({
-    passwordResetToken: token,
+    passwordResetToken: hashedToken,
     passwordResetExpires: { $gt: Date.now() }
   });
+
 
   if (!user) {
     throw new APIError('Invalid or expired reset token', 400);
