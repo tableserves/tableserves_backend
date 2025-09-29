@@ -804,6 +804,8 @@ const requestPasswordReset = catchAsync(async (req, res) => {
       userFromDB.passwordResetToken = resetToken.hashedToken;
       userFromDB.passwordResetExpires = resetToken.expiresAt;
       await userFromDB.save();
+// Construct frontend URL - use environment variable if available, otherwise fallback to protocol + host
+      const frontendUrl = process.env.FRONTEND_URL || `${req.protocol}://${req.headers.host}`;
       
       await notificationService.sendEmailNotification(email, {
         type: 'password_reset',
@@ -812,7 +814,7 @@ const requestPasswordReset = catchAsync(async (req, res) => {
 
 Please click on the following link, or paste this into your browser to complete the process:
 
-http://${req.headers.host}/reset-password/${resetToken.token}
+${frontendUrl}/reset-password/${resetToken.token}
 
 If you did not request this, please ignore this email and your password will remain unchanged.
 `,
