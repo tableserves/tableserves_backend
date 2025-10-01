@@ -313,4 +313,14 @@ router.get('/admin/subscriptions/forecast',
   catchAsync(subscriptionController.getSubscriptionForecast)
 );
 
+/**
+ * Update subscription limits (admin only)
+ * @route PATCH /api/admin/subscriptions/:subscriptionId/limits
+ */
+router.patch('/admin/subscriptions/:subscriptionId/limits',
+  authenticate,
+  authorize('admin'),
+  catchAsync(subscriptionController.updateSubscriptionLimits)
+);
+
 module.exports = router;

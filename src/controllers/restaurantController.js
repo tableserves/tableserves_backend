@@ -342,6 +342,12 @@ const createRestaurant = catchAsync(async (req, res) => {
     await freeSubscription.save();
     validatedSubscriptionId = freeSubscription._id;
 
+    // Update user's plan status to active
+    await User.findByIdAndUpdate(userId, {
+      planStatus: 'active',
+      planExpiryDate: freeSubscription.endDate
+    });
+
     console.log('✅ Created free subscription for new restaurant:', {
       userId,
       subscriptionId: freeSubscription._id,
@@ -722,6 +728,7 @@ const updateRestaurant = catchAsync(async (req, res) => {
 // Delete a restaurant
 const deleteRestaurant = catchAsync(async (req, res) => {
   const { id } = req.params;
+  const { permanent = false } = req.query;
   const userId = req.user.id;
   const userRole = req.user.role;
 
@@ -735,14 +742,38 @@ const deleteRestaurant = catchAsync(async (req, res) => {
     throw new APIError('Not authorized to delete this restaurant', 403);
   }
 
-  // Soft delete by setting status to 'deleted' instead of actually removing
-  restaurant.status = 'deleted';
-  await restaurant.save();
+  if (permanent === 'true') {
+    // Permanent deletion - also delete user and subscription
+    const User = require('../models/User');
+    const Subscription = require('../models/Subscription');
+    
+    // Delete the user account if exists
+    if (restaurant.ownerId) {
+      await User.findByIdAndDelete(restaurant.ownerId);
+    }
+    
+    // Delete the subscription if exists
+    if (restaurant.subscriptionId) {
+      await Subscription.findByIdAndDelete(restaurant.subscriptionId);
+    }
+    
+    // Finally delete the restaurant itself
+    await Restaurant.findByIdAndDelete(id);
+    
+    res.status(200).json({
+      success: true,
+      message: 'Restaurant and all related data permanently deleted'
+    });
+  } else {
+    // Soft delete by setting status to 'deleted' instead of actually removing
+    restaurant.status = 'deleted';
+    await restaurant.save();
 
-  res.status(200).json({
-    success: true,
-    message: 'Restaurant deleted successfully'
-  });
+    res.status(200).json({
+      success: true,
+      message: 'Restaurant deleted successfully'
+    });
+  }
 });
 
 // Toggle restaurant status (active/inactive)

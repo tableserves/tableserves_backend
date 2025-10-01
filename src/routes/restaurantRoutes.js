@@ -182,6 +182,7 @@ router.post('/:id/tables',
   authenticate,
   authorize('admin', 'restaurant_owner'),
   checkFeatureAccess('qrGeneration'),
+  PlanValidationMiddleware ? PlanValidationMiddleware.checkTableCreationLimit() : (req, res, next) => next(),
   ValidationRules.validateObjectId('id'),
   handleValidation,
   wrapAsync(addTable, 'addTable')

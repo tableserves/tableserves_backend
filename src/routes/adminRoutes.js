@@ -787,6 +787,16 @@ router.post('/restaurants',
           },
           { new: true }
         );
+        
+        // Update the owner user's plan status to active since they now have a premium restaurant
+        await User.findByIdAndUpdate(
+          ownerId,
+          {
+            planStatus: 'active',
+            planExpiryDate: subscription.endDate
+          },
+          { new: true }
+        );
 
         await updatedRestaurant.populate('ownerId', 'email profile.name username');
         await updatedRestaurant.populate('subscriptionId', 'planKey planName status planType features limits');
@@ -871,6 +881,16 @@ router.post('/restaurants',
     try {
       // Create restaurant - pre-save middleware will handle slug generation
       const restaurant = await Restaurant.create(restaurantData);
+      
+      // Update the owner user's plan status to active since they now have a premium restaurant
+      await User.findByIdAndUpdate(
+        ownerId,
+        {
+          planStatus: 'active',
+          planExpiryDate: subscription.endDate
+        },
+        { new: true }
+      );
       
       // Populate the response for frontend compatibility
       await restaurant.populate('ownerId', 'email profile.name username');
@@ -962,6 +982,10 @@ router.post('/restaurants',
 router.post('/zones',
   wrapAsync(async (req, res) => {
     const Zone = require('../models/Zone');
+    const User = require('../models/User');
+    const Subscription = require('../models/Subscription');
+    const { ErrorTypes } = require('../middleware/errorHandler');
+    
     const {
       adminId,
       subscriptionId,
@@ -982,6 +1006,54 @@ router.post('/zones',
       paymentConfig,
       subscriptionPlan
     } = req.body;
+
+    // Validate admin user exists and has correct role
+    const adminUser = await User.findById(adminId);
+    if (!adminUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'Admin user not found'
+      });
+    }
+    
+    if (adminUser.role !== 'zone_admin') {
+      return res.status(400).json({
+        success: false,
+        message: 'Selected user must have zone_admin role'
+      });
+    }
+    
+    // Validate subscription exists and is for zones
+    const subscription = await Subscription.findById(subscriptionId);
+    if (!subscription) {
+      return res.status(404).json({
+        success: false,
+        message: 'Subscription not found'
+      });
+    }
+    
+    if (subscription.planType !== 'zone') {
+      return res.status(400).json({
+        success: false,
+        message: 'Subscription must be for zone plan type'
+      });
+    }
+    
+    if (subscription.status !== 'active') {
+      return res.status(400).json({
+        success: false,
+        message: 'Subscription must be active'
+      });
+    }
+    
+    // Check if admin already has a zone (if business rule requires)
+    const existingZone = await Zone.findOne({ adminId, active: true });
+    if (existingZone) {
+      return res.status(409).json({
+        success: false,
+        message: 'Admin user already manages an active zone'
+      });
+    }
 
     // Create zone data structure that matches the Zone model
     const zoneData = {
@@ -1012,6 +1084,16 @@ router.post('/zones',
 
     const zone = await Zone.create(zoneData);
     
+    // Update the admin user's plan status to active since they now have a premium zone
+    await User.findByIdAndUpdate(
+      adminId,
+      {
+        planStatus: 'active',
+        planExpiryDate: subscription.endDate
+      },
+      { new: true }
+    );
+    
     // Populate the response for frontend compatibility
     await zone.populate('adminId', 'email profile.name username');
     await zone.populate('subscriptionId', 'planKey planName status');
@@ -1022,6 +1104,117 @@ router.post('/zones',
       message: 'Premium zone created successfully'
     });
   }, 'createZone')
+);
+
+/**
+ * @route DELETE /api/v1/admin/zones/:id
+ * @desc Delete zone permanently (admin only)
+ * @access Private (admin only)
+ */
+router.delete('/zones/:id',
+  wrapAsync(async (req, res) => {
+    const { id } = req.params;
+    const { permanent = false } = req.query;
+    const Zone = require('../models/Zone');
+    const ZoneShop = require('../models/ZoneShop');
+
+    const zone = await Zone.findById(id);
+    if (!zone) {
+      return res.status(404).json({
+        success: false,
+        message: 'Zone not found'
+      });
+    }
+
+    // Check if zone has active shops
+    const activeShopsCount = await ZoneShop.countDocuments({ 
+      zoneId: id, 
+      status: { $in: ['active', 'pending'] } 
+    });
+
+    if (activeShopsCount > 0) {
+      return res.status(409).json({
+        success: false,
+        message: `Cannot delete zone with ${activeShopsCount} active/pending shops. Please remove or transfer shops first.`
+      });
+    }
+
+    if (permanent === 'true' || permanent === true) {
+      // Permanent deletion - also delete associated shops, user, and subscription
+      await ZoneShop.deleteMany({ zoneId: id });
+      
+      // Delete the user account if exists
+      const User = require('../models/User');
+      if (zone.adminId) {
+        await User.findByIdAndDelete(zone.adminId);
+      }
+      
+      // Delete the subscription if exists
+      const Subscription = require('../models/Subscription');
+      if (zone.subscriptionId) {
+        await Subscription.findByIdAndDelete(zone.subscriptionId);
+      }
+      
+      // Finally delete the zone itself
+      await Zone.findByIdAndDelete(id);
+      
+      return res.status(200).json({
+        success: true,
+        message: 'Zone and all related data permanently deleted'
+      });
+    } else {
+      // Soft delete - mark as inactive
+      zone.active = false;
+      await zone.save();
+      
+      return res.status(200).json({
+        success: true,
+        message: 'Zone deactivated successfully'
+      });
+    }
+  }, 'deleteZone')
+);
+
+/**
+ * @route DELETE /api/v1/admin/subscriptions/:id
+ * @desc Delete subscription permanently (admin only)
+ * @access Private (admin only)
+ */
+router.delete('/subscriptions/:id',
+  wrapAsync(async (req, res) => {
+    const { id } = req.params;
+    const { hardDelete = false } = req.query;
+    const Subscription = require('../models/Subscription');
+
+    if (hardDelete === 'true' || hardDelete === true) {
+      // Permanent deletion
+      const subscription = await Subscription.findByIdAndDelete(id);
+      
+      if (!subscription) {
+        return res.status(404).json({
+          success: false,
+          message: 'Subscription not found'
+        });
+      }
+      
+      // Also update the user's subscription reference if exists
+      const User = require('../models/User');
+      await User.updateMany(
+        { subscription: id },
+        { $unset: { subscription: "", planStatus: "free" } }
+      );
+      
+      return res.status(200).json({
+        success: true,
+        message: 'Subscription permanently deleted'
+      });
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: 'Soft delete not supported for subscriptions. Use hardDelete=true for permanent deletion.'
+      });
+    }
+  }, 'deleteSubscription')
 );
 
 /**

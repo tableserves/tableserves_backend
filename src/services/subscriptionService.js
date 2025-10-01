@@ -54,9 +54,13 @@ class SubscriptionService {
 
       const subscription = new Subscription(subscriptionData);
       await subscription.save();
-
-      // Link subscription to user
-      await User.findByIdAndUpdate(userId, { subscription: subscription._id });
+        
+      // Link subscription to user AND update plan status
+      await User.findByIdAndUpdate(userId, { 
+        subscription: subscription._id,
+        planStatus: 'active', // Set plan status to active
+        planExpiryDate: subscription.endDate // Set expiry date to match subscription
+      });
 
       loggerUtils.logBusiness('Free plan created', subscription._id, {
         userId,
@@ -189,6 +193,12 @@ class SubscriptionService {
 
       await subscription.save();
 
+      // Update user's plan status to active
+      await User.findByIdAndUpdate(userId, {
+        planStatus: 'active',
+        planExpiryDate: subscription.endDate
+      });
+
       loggerUtils.logBusiness('Subscription upgraded to premium', subscription._id, {
         userId,
         planKey,
@@ -289,6 +299,12 @@ class SubscriptionService {
       }
 
       await subscription.save();
+      
+      // Update user's plan status to active
+      await User.findByIdAndUpdate(userId, {
+        planStatus: 'active',
+        planExpiryDate: subscription.endDate
+      });
 
       loggerUtils.logBusiness('Subscription plan upgraded', subscription._id, {
         userId,

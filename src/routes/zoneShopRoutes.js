@@ -1,9 +1,9 @@
 const express = require('express');
-const ZoneShopController = require('../controllers/zoneShopController');
-const { authenticate, optionalAuth, authorize } = require('../middleware/authMiddleware');
+const { defaultRateLimiter } = require('../middleware/userRateLimit');
+const { authenticate, authorize, checkFeatureAccess, checkResourceOwnership } = require('../middleware/authMiddleware');
 const { ValidationRules, handleValidation } = require('../middleware/validationMiddleware');
-const { uploadMiddleware } = require('../services/uploadService');
 const { createRouteHandler, routeErrorHandler, requestTimer } = require('../middleware/routeErrorHandler');
+const PlanValidationMiddleware = require('../middleware/planValidationMiddleware');
 
 const router = express.Router();
 
@@ -73,16 +73,20 @@ router.post('/zones/:zoneId/vendor',
   wrapAsync(ZoneShopController.createVendor, 'createVendor')
 );
 
-// @route   POST /api/v1/shops/zones/:zoneId
-// @desc    Create a new shop in zone
-// @access  Private (Zone Admin, Admin)
+/**
+ * @route POST /api/v1/shops/zones/:zoneId
+ * @desc Create new shop in zone
+ * @access Private (Zone Admin, Admin)
+ */
 router.post('/zones/:zoneId',
   authenticate,
   authorize('admin', 'zone_admin'),
+  checkFeatureAccess('vendorManagement'),
+  PlanValidationMiddleware ? PlanValidationMiddleware.checkShopCreationLimit() : (req, res, next) => next(),
   ValidationRules.validateObjectId('zoneId'),
   ValidationRules.createZoneShop,
   handleValidation,
-  wrapAsync(ZoneShopController.createShop, 'createShop')
+  wrapAsync(createShop, 'createShop')
 );
 
 // @route   PUT /api/v1/shops/zones/:zoneId/shop/:shopId

@@ -555,11 +555,11 @@ const createCustomSubscription = async (req, res) => {
         customBranding: features?.customBranding ?? true
       },
       limits: {
-        maxTables: limits?.maxTables !== undefined ? limits.maxTables : (planType === 'restaurant' ? 20 : 0),
-        maxShops: limits?.maxShops !== undefined ? limits.maxShops : (planType === 'zone' ? 25 : 1),
-        maxVendors: limits?.maxVendors !== undefined ? limits.maxVendors : (planType === 'zone' ? 25 : 1),
-        maxCategories: limits?.maxCategories !== undefined ? limits.maxCategories : 50,
-        maxMenuItems: limits?.maxMenuItems !== undefined ? limits.maxMenuItems : 500,
+        maxTables: limits?.maxTables !== undefined ? limits.maxTables : (planType === 'restaurant' ? 20 : -1),
+        maxShops: limits?.maxShops !== undefined ? limits.maxShops : (planType === 'zone' ? -1 : 1),
+        maxVendors: limits?.maxVendors !== undefined ? limits.maxVendors : (planType === 'zone' ? -1 : 1),
+        maxCategories: limits?.maxCategories !== undefined ? limits.maxCategories : -1,
+        maxMenuItems: limits?.maxMenuItems !== undefined ? limits.maxMenuItems : -1,
         maxUsers: limits?.maxUsers !== undefined ? limits.maxUsers : 10,
         maxOrdersPerMonth: limits?.maxOrdersPerMonth !== undefined ? limits.maxOrdersPerMonth : -1,
         maxStorageGB: limits?.maxStorageGB !== undefined ? limits.maxStorageGB : 10
@@ -580,8 +580,9 @@ const createCustomSubscription = async (req, res) => {
         currentCategories: 0,
         currentMenuItems: 0,
         currentUsers: 1, // The owner
-        currentOrdersThisMonth: 0,
-        storageUsedGB: 0
+        ordersThisMonth: 0,
+        storageUsedGB: 0,
+        lastUsageUpdate: new Date()
       }
     };
 
@@ -596,10 +597,15 @@ const createCustomSubscription = async (req, res) => {
     const subscription = new Subscription(subscriptionData);
     await subscription.save();
 
-    // Update user's subscription reference
+    // Update user's subscription reference AND plan status
     await User.findByIdAndUpdate(
       userId, 
-      { subscription: subscription._id },
+      { 
+        subscription: subscription._id,
+        planStatus: 'active', // Set plan status to active for premium accounts
+        currentPlanId: null, // Will be set when user logs in or accesses plan features
+        planExpiryDate: subscription.endDate // Set expiry date to match subscription
+      },
       { new: true }
     );
 
@@ -647,6 +653,89 @@ const getSubscriptionForecast = async (req, res) => {
   res.status(501).json({ success: false, message: 'Not implemented yet' });
 };
 
+/**
+ * Update subscription limits (admin only)
+ * @route PATCH /api/admin/subscriptions/:subscriptionId/limits
+ */
+const updateSubscriptionLimits = async (req, res) => {
+  try {
+    const { subscriptionId } = req.params;
+    const { maxTables, maxShops, maxVendors, maxCategories, maxMenuItems, maxUsers, maxOrdersPerMonth, maxStorageGB } = req.body;
+
+    logger.info('Updating subscription limits', { subscriptionId, requestData: req.body, adminId: req.user.id });
+
+    // Find the subscription
+    const subscription = await Subscription.findById(subscriptionId);
+    if (!subscription) {
+      logger.warn('Subscription not found for update', { subscriptionId, adminId: req.user.id });
+      throw new APIError('Subscription not found', 404);
+    }
+
+    logger.info('Found subscription for update', { subscriptionId, currentLimits: subscription.limits });
+
+    // Update limits
+    if (maxTables !== undefined) {
+      subscription.limits.maxTables = maxTables;
+      logger.info('Updated maxTables limit', { subscriptionId, oldValue: subscription.limits.maxTables, newValue: maxTables });
+    }
+    if (maxShops !== undefined) {
+      subscription.limits.maxShops = maxShops;
+      logger.info('Updated maxShops limit', { subscriptionId, oldValue: subscription.limits.maxShops, newValue: maxShops });
+    }
+    if (maxVendors !== undefined) {
+      subscription.limits.maxVendors = maxVendors;
+      logger.info('Updated maxVendors limit', { subscriptionId, oldValue: subscription.limits.maxVendors, newValue: maxVendors });
+    }
+    if (maxCategories !== undefined) {
+      subscription.limits.maxCategories = maxCategories;
+      logger.info('Updated maxCategories limit', { subscriptionId, oldValue: subscription.limits.maxCategories, newValue: maxCategories });
+    }
+    if (maxMenuItems !== undefined) {
+      subscription.limits.maxMenuItems = maxMenuItems;
+      logger.info('Updated maxMenuItems limit', { subscriptionId, oldValue: subscription.limits.maxMenuItems, newValue: maxMenuItems });
+    }
+    if (maxUsers !== undefined) {
+      subscription.limits.maxUsers = maxUsers;
+      logger.info('Updated maxUsers limit', { subscriptionId, oldValue: subscription.limits.maxUsers, newValue: maxUsers });
+    }
+    if (maxOrdersPerMonth !== undefined) {
+      subscription.limits.maxOrdersPerMonth = maxOrdersPerMonth;
+      logger.info('Updated maxOrdersPerMonth limit', { subscriptionId, oldValue: subscription.limits.maxOrdersPerMonth, newValue: maxOrdersPerMonth });
+    }
+    if (maxStorageGB !== undefined) {
+      subscription.limits.maxStorageGB = maxStorageGB;
+      logger.info('Updated maxStorageGB limit', { subscriptionId, oldValue: subscription.limits.maxStorageGB, newValue: maxStorageGB });
+    }
+
+    // Save the updated subscription
+    await subscription.save();
+
+    logger.info('Subscription limits updated successfully', {
+      subscriptionId,
+      updatedLimits: {
+        maxTables: subscription.limits.maxTables,
+        maxShops: subscription.limits.maxShops,
+        maxVendors: subscription.limits.maxVendors,
+        maxCategories: subscription.limits.maxCategories,
+        maxMenuItems: subscription.limits.maxMenuItems,
+        maxUsers: subscription.limits.maxUsers,
+        maxOrdersPerMonth: subscription.limits.maxOrdersPerMonth,
+        maxStorageGB: subscription.limits.maxStorageGB
+      },
+      adminId: req.user.id
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Subscription limits updated successfully',
+      data: subscription
+    });
+  } catch (error) {
+    logger.error('Error updating subscription limits:', error);
+    throw new APIError(error.message || 'Failed to update subscription limits', error.statusCode || 500);
+  }
+};
+
 module.exports = {
   getCurrentSubscription,
   upgradePlan,
@@ -675,5 +764,6 @@ module.exports = {
   exportSubscriptionData,
   getSubscriptionTrends,
   getChurnAnalysis,
-  getSubscriptionForecast
+  getSubscriptionForecast,
+  updateSubscriptionLimits
 };

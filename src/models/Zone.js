@@ -47,7 +47,8 @@ const ZoneSchema = new mongoose.Schema({
       required: [true, 'Contact phone is required'],
       validate: {
         validator: function(phone) {
-          return /^[+]?[1-9]\d{1,14}$/.test(phone);
+          // Allow various phone number formats including international ones
+          return /^[+]?[\d\s\-\(\)]{10,15}$/.test(phone);
         },
         message: 'Please provide a valid phone number'
       }
@@ -379,6 +380,77 @@ ZoneSchema.virtual('activeShopsCount', {
 ZoneSchema.pre('save', function(next) {
   // Any additional validation can be added here
   next();
+});
+
+// Pre-save middleware for subscription sync (NEW)
+ZoneSchema.pre('save', async function(next) {
+  try {
+    // Auto-sync subscription plan with actual subscription data
+    if (this.subscriptionId && (this.isNew || this.isModified('subscriptionId'))) {
+      try {
+        const Subscription = require('./Subscription');
+        const subscription = await Subscription.findById(this.subscriptionId);
+        
+        if (subscription && subscription.planKey) {
+          let subscriptionPlan = 'free'; // default
+          
+          // Map subscription planKey to zone subscriptionPlan
+          switch (subscription.planKey) {
+            case 'zone_enterprise':
+            case 'zone_premium':
+              subscriptionPlan = 'premium';
+              break;
+            case 'zone_professional':
+            case 'zone_advanced':
+              subscriptionPlan = 'advanced';
+              break;
+            case 'zone_starter':
+            case 'zone_basic':
+              subscriptionPlan = 'basic';
+              break;
+            case 'zone_free':
+            case 'free_plan':
+            default:
+              subscriptionPlan = 'free';
+              break;
+          }
+          
+          // Only update if it's different to prevent unnecessary saves
+          if (this.subscriptionPlan !== subscriptionPlan) {
+            this.subscriptionPlan = subscriptionPlan;
+            
+            console.log('🔄 Auto-syncing zone subscription plan:', {
+              zoneId: this._id,
+              subscriptionPlanKey: subscription.planKey,
+              mappedSubscriptionPlan: subscriptionPlan
+            });
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to sync zone subscription plan:', error.message);
+        // Don't fail the save operation for sync errors
+      }
+    }
+    
+    // Sync ownerName with user profile name if not set or if adminId changed
+    if (this.isNew || this.isModified('adminId') || !this.ownerName) {
+      try {
+        const User = require('./User');
+        const admin = await User.findById(this.adminId);
+        if (admin && admin.profile?.name) {
+          this.ownerName = admin.profile.name;
+        } else if (admin && admin.username) {
+          this.ownerName = admin.username;
+        }
+      } catch (error) {
+        console.warn('Failed to sync zone admin name from user profile:', error.message);
+      }
+    }
+    
+    next();
+  } catch (error) {
+    next(error);
+  }
 });
 
 // Instance method to check if zone is currently open

@@ -110,16 +110,16 @@ const register = catchAsync(async (req, res) => {
   // Hash password
   const passwordHash = await hashPassword(password);
 
-  // Generate unique username (simplified)
-  let username = profile?.username || email.split('@')[0];
+  // Use the exact username provided by the user without any modifications
+  let username = req.body.username;
 
-  // Ensure username is valid (only letters, numbers, underscores, hyphens)
-  username = username.replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
+  // Ensure username is valid (only lowercase letters and numbers)
+  username = username.toLowerCase().replace(/[^a-z0-9]/g, '');
 
   // Make it unique by adding timestamp if needed
   const existingUserWithUsername = await User.findOne({ username: username });
   if (existingUserWithUsername) {
-    username = `${username}_${Date.now().toString().slice(-4)}`;
+    username = `${username}${Date.now().toString().slice(-4)}`;
   }
 
   // Create user
@@ -132,7 +132,8 @@ const register = catchAsync(async (req, res) => {
     businessType: businessType, // Store business type from registration
     profile: {
       name: profile?.name || 'User',
-      businessName: profile?.businessName || 'Business'
+      businessName: profile?.businessName || 'Business',
+      username: username // Also store in profile for consistency
     },
     status: 'active', // Set to active since business type is selected during registration
     emailVerified: false,
@@ -210,8 +211,10 @@ const register = catchAsync(async (req, res) => {
 
     await freeSubscription.save();
 
-    // Link subscription to user
+    // Link subscription to user AND update plan status
     user.subscription = freeSubscription._id;
+    user.planStatus = 'active'; // Set plan status to active for free plans
+    user.planExpiryDate = freeSubscription.endDate; // Set expiry date to match subscription
     await user.save();
   }
 

@@ -393,12 +393,118 @@ class PlanValidationMiddleware {
 
         if (!plan.features[featureName]) {
           throw new APIError(
-            `This feature is not available in your ${plan.name} plan. Please upgrade to access ${featureName}.`,
+            `Feature '${featureName}' is not available in your ${plan.planName} plan. Please upgrade your plan to access this feature.`,
             403
           );
         }
 
         req.userPlan = userPlan;
+        next();
+      } catch (error) {
+        next(error);
+      }
+    };
+  }
+
+  /**
+   * Check if user can create tables based on plan limits
+   */
+  static checkTableCreationLimit() {
+    return async (req, res, next) => {
+      try {
+        if (req.user.role === 'admin') {
+          return next(); // Admin bypass
+        }
+
+        const userPlan = await this.getUserPlan(req.user.id);
+        const { plan } = userPlan;
+
+        if (!plan) {
+          throw new APIError('Unable to determine user plan', 500);
+        }
+
+        // Check table creation limit
+        const maxTables = plan.limits.maxTables;
+        
+        if (maxTables === null || maxTables === -1) {
+          // Unlimited tables
+          return next();
+        }
+
+        // Count current tables for the restaurant
+        const { id: restaurantId } = req.params;
+        const Restaurant = require('../models/Restaurant');
+        
+        const restaurant = await Restaurant.findById(restaurantId);
+        if (!restaurant) {
+          throw new APIError('Restaurant not found', 404);
+        }
+
+        const currentTableCount = restaurant.tables ? restaurant.tables.length : 0;
+
+        if (currentTableCount >= maxTables) {
+          throw new APIError(
+            `Table creation limit reached. Your ${plan.planName} plan allows ${maxTables} table${maxTables > 1 ? 's' : ''}. Please upgrade your plan to create more tables.`,
+            403
+          );
+        }
+
+        // Add plan info to request for further use
+        req.userPlan = userPlan;
+        req.currentUsage = { tables: currentTableCount };
+
+        next();
+      } catch (error) {
+        next(error);
+      }
+    };
+  }
+
+  /**
+   * Check if user can create shops based on plan limits (for zones)
+   */
+  static checkShopCreationLimit() {
+    return async (req, res, next) => {
+      try {
+        if (req.user.role === 'admin') {
+          return next(); // Admin bypass
+        }
+
+        const userPlan = await this.getUserPlan(req.user.id);
+        const { plan } = userPlan;
+
+        if (!plan) {
+          throw new APIError('Unable to determine user plan', 500);
+        }
+
+        // Check shop creation limit
+        const maxShops = plan.limits.maxShops;
+        
+        if (maxShops === null || maxShops === -1) {
+          // Unlimited shops
+          return next();
+        }
+
+        // Count current shops for the zone
+        const { zoneId } = req.params;
+        const ZoneShop = require('../models/ZoneShop');
+        
+        const currentShopCount = await ZoneShop.countDocuments({
+          zoneId: zoneId,
+          status: { $in: ['active', 'pending'] }
+        });
+
+        if (currentShopCount >= maxShops) {
+          throw new APIError(
+            `Shop creation limit reached. Your ${plan.planName} plan allows ${maxShops} shop${maxShops > 1 ? 's' : ''}. Please upgrade your plan to create more shops.`,
+            403
+          );
+        }
+
+        // Add plan info to request for further use
+        req.userPlan = userPlan;
+        req.currentUsage = { shops: currentShopCount };
+
         next();
       } catch (error) {
         next(error);

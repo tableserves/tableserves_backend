@@ -98,6 +98,48 @@ class ZoneController {
       throw ErrorTypes.NotFoundError('Zone');
     }
     
+    // Sync subscription plan with actual subscription data
+    if (zone.subscriptionId) {
+      const subscription = zone.subscriptionId;
+      let subscriptionPlan = 'free'; // default
+      
+      if (subscription && subscription.planKey) {
+        // Map subscription planKey to zone subscriptionPlan
+        switch (subscription.planKey) {
+          case 'zone_enterprise':
+          case 'zone_premium':
+            subscriptionPlan = 'premium';
+            break;
+          case 'zone_professional':
+          case 'zone_advanced':
+            subscriptionPlan = 'advanced';
+            break;
+          case 'zone_starter':
+          case 'zone_basic':
+            subscriptionPlan = 'basic';
+            break;
+          case 'zone_free':
+          case 'free_plan':
+          default:
+            subscriptionPlan = 'free';
+            break;
+        }
+        
+        // Update zone if subscription plan is out of sync
+        if (zone.subscriptionPlan !== subscriptionPlan) {
+          zone.subscriptionPlan = subscriptionPlan;
+          await zone.save();
+          
+          console.log('🔄 Zone subscription plan auto-synced:', {
+            zoneId: zone._id,
+            oldPlan: zone.subscriptionPlan,
+            newPlan: subscriptionPlan,
+            subscriptionPlanKey: subscription.planKey
+          });
+        }
+      }
+    }
+    
     // Public access (QR scanning) - return basic zone info
     if (!req.user) {
       const publicZoneData = {
@@ -331,13 +373,27 @@ class ZoneController {
     }
     
     if (permanent === 'true') {
-      // Permanent deletion - also delete associated shops
+      // Permanent deletion - also delete associated shops, user, and subscription
       await ZoneShop.deleteMany({ zoneId: id });
+      
+      // Delete the user account if exists
+      const User = require('../models/User');
+      if (zone.adminId) {
+        await User.findByIdAndDelete(zone.adminId);
+      }
+      
+      // Delete the subscription if exists
+      const Subscription = require('../models/Subscription');
+      if (zone.subscriptionId) {
+        await Subscription.findByIdAndDelete(zone.subscriptionId);
+      }
+      
+      // Finally delete the zone itself
       await Zone.findByIdAndDelete(id);
       
       res.status(200).json({
         success: true,
-        message: 'Zone permanently deleted'
+        message: 'Zone and all related data permanently deleted'
       });
     } else {
       // Soft delete - mark as inactive
