@@ -1,9 +1,11 @@
 const express = require('express');
 const { defaultRateLimiter } = require('../middleware/userRateLimit');
-const { authenticate, authorize, checkFeatureAccess, checkResourceOwnership } = require('../middleware/authMiddleware');
+const { authenticate, authorize, checkFeatureAccess, checkResourceOwnership, optionalAuth } = require('../middleware/authMiddleware');
 const { ValidationRules, handleValidation } = require('../middleware/validationMiddleware');
 const { createRouteHandler, routeErrorHandler, requestTimer } = require('../middleware/routeErrorHandler');
 const PlanValidationMiddleware = require('../middleware/planValidationMiddleware');
+const ZoneShopController = require('../controllers/zoneShopController');
+const { uploadMiddleware } = require('../services/uploadService');
 
 const router = express.Router();
 
@@ -12,10 +14,6 @@ router.use(requestTimer);
 
 // Use the standardized route handler
 const wrapAsync = createRouteHandler;
-
-// Removed validateHandler function - using direct middleware calls now
-
-// Dependencies are validated at runtime - no need for strict pre-validation
 
 // ==================== PUBLIC ROUTES ====================
 
@@ -86,7 +84,7 @@ router.post('/zones/:zoneId',
   ValidationRules.validateObjectId('zoneId'),
   ValidationRules.createZoneShop,
   handleValidation,
-  wrapAsync(createShop, 'createShop')
+  wrapAsync(ZoneShopController.createShop, 'createShop')
 );
 
 // @route   PUT /api/v1/shops/zones/:zoneId/shop/:shopId

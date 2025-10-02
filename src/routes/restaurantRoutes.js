@@ -3,6 +3,7 @@ const { defaultRateLimiter } = require('../middleware/userRateLimit');
 const { authenticate, authorize, checkFeatureAccess, checkResourceOwnership } = require('../middleware/authMiddleware');
 const { ValidationRules, handleValidation } = require('../middleware/validationMiddleware');
 const { createRouteHandler, routeErrorHandler, requestTimer } = require('../middleware/routeErrorHandler');
+const PlanValidationMiddleware = require('../middleware/planValidationMiddleware');
 const {
   getAllRestaurants,
   getRestaurant,
