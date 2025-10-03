@@ -109,13 +109,16 @@ const register = catchAsync(async (req, res) => {
 
   // Hash password
   const passwordHash = await hashPassword(password);
-
-  // Use the exact username provided by the user without any modifications
-  let username = req.body.username;
+// Use the exact username provided by the user without any modifications
+  // Fix: Get username from profile object where frontend sends it
+  let username = req.body.profile?.username || req.body.username;
 
   // Ensure username is valid (only lowercase letters and numbers)
-  username = username.toLowerCase().replace(/[^a-z0-9]/g, '');
-
+  // Fix: Check if username exists before calling toLowerCase
+  if (username) {
+    username = username.toLowerCase().replace(/[^a-z0-9]/g, '');
+  }
+  
   // Make it unique by adding timestamp if needed
   const existingUserWithUsername = await User.findOne({ username: username });
   if (existingUserWithUsername) {
