@@ -44,7 +44,7 @@ class DatabaseManager {
       },
 
       // Read preference
-      readPreference: isProduction ? 'secondaryPreferred' : 'primary',
+      readPreference : 'primary',
 
       // Compression (if supported by MongoDB version)
       compressors: isProduction ? ['zstd', 'zlib'] : [],
