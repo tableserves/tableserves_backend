@@ -113,7 +113,7 @@ async function testPublicApiEndpoint() {
   console.log('🔄 Testing public API endpoint...');
 
   try {
-    const response = await axios.get('https://sea-turtle-app-4738a.ondigitalocean.app/api/v1/restaurants/public/id/68ca1eb9aeec5e49a67d57b8', {
+    const response = await axios.get('https://tableserves-5hy4f.ondigitalocean.app/api/v1/restaurants/public/id/68ca1eb9aeec5e49a67d57b8', {
       headers: {
         'Content-Type': 'application/json'
       }

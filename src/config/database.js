@@ -19,9 +19,7 @@ class DatabaseManager {
     const isProduction = process.env.NODE_ENV === 'production';
 
     const baseOptions = {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-
+  
       // Index management
       autoIndex: !isProduction, // Only create indexes automatically in development
       autoCreate: !isProduction, // Only auto-create collections in development
@@ -105,7 +103,7 @@ class DatabaseManager {
       await this.verifyConnection();
 
       if (process.env.NODE_ENV === 'production') {
-        await this.setupProductionIndexes();
+        logger.info('Skipping index setup in production — existing indexes are already configured.');
       }
 
       logger.info('✅ MongoDB Connected Successfully', {
