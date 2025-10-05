@@ -126,14 +126,23 @@ class RealtimeOrderService {
         }
 
         // Also notify admin dashboard
-        io.to('admin_dashboard').emit('restaurant_order_update', {
+        const adminNotificationData = {
           restaurantId,
           orderId: order._id,
           orderNumber: order.orderNumber,
           status: order.status,
           total: order.pricing.total,
+          restaurantName: order.restaurantName,
           timestamp: new Date()
-        });
+        };
+
+        if (order.status === 'pending' && order.isNew !== false) {
+          // New order - notify admin
+          io.to('admin_dashboard').emit('new_order', adminNotificationData);
+        } else {
+          // Order update - notify admin
+          io.to('admin_dashboard').emit('restaurant_order_update', adminNotificationData);
+        }
       } else {
         console.log('SocketService not available for restaurant notification');
       }
@@ -159,8 +168,7 @@ class RealtimeOrderService {
         const io = socketService.getIO();
         if (!io) return;
 
-        // Notify zone admin
-        io.to(`zone_${zoneId}`).emit('zone_order_update', {
+        const orderData = {
           orderId: order._id,
           orderNumber: order.orderNumber,
           status: order.status,
@@ -171,12 +179,23 @@ class RealtimeOrderService {
           },
           total: order.pricing.total,
           shopCount: order.shopOrders?.length || 0,
-          timestamp: new Date()
-        });
+          timestamp: new Date(),
+          zoneId: zoneId,
+          zoneName: order.zoneName
+        };
+
+        // Emit different events based on order status
+        if (order.status === 'pending' && order.isNew !== false) {
+          // New order - emit to zone
+          io.to(`zone_${zoneId}`).emit('new_order', orderData);
+        } else {
+          // Order update - emit to zone
+          io.to(`zone_${zoneId}`).emit('zone_order_update', orderData);
+        }
 
         // If this is a shop order, notify the specific shop
         if (order.shopId) {
-          io.to(`shop_${order.shopId}`).emit('shop_order_update', {
+          const shopOrderData = {
             orderId: order._id,
             orderNumber: order.orderNumber,
             status: order.status,
@@ -189,8 +208,40 @@ class RealtimeOrderService {
             total: order.pricing.total,
             estimatedTime: order.delivery.estimatedTime,
             specialInstructions: order.specialInstructions,
-            timestamp: new Date()
-          });
+            timestamp: new Date(),
+            shopId: order.shopId,
+            shopName: order.shopName,
+            zoneId: zoneId
+          };
+
+          // Emit different events based on order status
+          if (order.status === 'pending' && order.isNew !== false) {
+            // New order - emit to shop
+            io.to(`shop_${order.shopId}`).emit('new_order', shopOrderData);
+          } else {
+            // Order update - emit to shop
+            io.to(`shop_${order.shopId}`).emit('shop_order_update', shopOrderData);
+          }
+        }
+
+        // Also notify admin dashboard about zone orders
+        const adminZoneNotificationData = {
+          zoneId,
+          orderId: order._id,
+          orderNumber: order.orderNumber,
+          status: order.status,
+          total: order.pricing.total,
+          zoneName: order.zoneName,
+          shopCount: order.shopOrders?.length || 0,
+          timestamp: new Date()
+        };
+
+        if (order.status === 'pending' && order.isNew !== false) {
+          // New zone order - notify admin
+          io.to('admin_dashboard').emit('new_order', adminZoneNotificationData);
+        } else {
+          // Zone order update - notify admin
+          io.to('admin_dashboard').emit('zone_order_update', adminZoneNotificationData);
         }
       } else {
         console.log('SocketService not available for zone notification');

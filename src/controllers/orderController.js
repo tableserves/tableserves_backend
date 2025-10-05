@@ -1015,25 +1015,52 @@ const getOrderByNumber = catchAsync(async (req, res) => {
   const { orderNumber } = req.params;
   const { phone } = req.query;
 
-  console.log('Fetching order by number:', { orderNumber, phone });
+  // Validate inputs
+  if (!orderNumber) {
+    logger.warn('Order number is required for tracking', { phone });
+    throw new APIError('Order number is required', 400);
+  }
 
   if (!phone) {
+    logger.warn('Customer phone number is required for order tracking', { orderNumber });
     throw new APIError('Customer phone number is required', 400);
   }
 
-  const order = await Order.findOne({ 
-    orderNumber: orderNumber.toUpperCase(),
-    'customer.phone': phone
-  })
-    .populate('restaurantId', 'name contact.phone settings.theme')
-    .populate('zoneId', 'name');
+  // Sanitize inputs
+  const sanitizedOrderNumber = orderNumber.trim().toUpperCase();
+  const sanitizedPhone = phone.trim();
 
-  if (!order) {
-    console.log('Order not found:', { orderNumber: orderNumber.toUpperCase(), phone });
-    throw new APIError('Order not found', 404);
+  logger.info('Fetching order by number from database', { 
+    orderNumber: sanitizedOrderNumber, 
+    phone: sanitizedPhone 
+  });
+
+  // Validate phone format (basic validation)
+  if (!sanitizedPhone || sanitizedPhone.length < 10) {
+    logger.warn('Invalid phone number format for order tracking', { 
+      orderNumber: sanitizedOrderNumber, 
+      phone: sanitizedPhone 
+    });
+    throw new APIError('Invalid phone number format', 400);
   }
 
-  console.log('Order found:', {
+  // Populate complete restaurant and zone data for receipts
+  const order = await Order.findOne({ 
+    orderNumber: sanitizedOrderNumber,
+    'customer.phone': sanitizedPhone
+  })
+    .populate('restaurantId', 'name contact settings.theme')
+    .populate('zoneId');
+
+  if (!order) {
+    logger.info('Order not found in database', { 
+      orderNumber: sanitizedOrderNumber, 
+      phone: sanitizedPhone 
+    });
+    throw new APIError('Order not found. Please verify the order number and phone number.', 404);
+  }
+
+  logger.info('Order found in database', {
     orderNumber: order.orderNumber,
     orderId: order._id,
     status: order.status,
@@ -1041,13 +1068,41 @@ const getOrderByNumber = catchAsync(async (req, res) => {
     zoneName: order.zoneId?.name
   });
 
+  // Validate that we have the required data
+  if (!order.customer || !order.customer.phone) {
+    logger.error('Order missing customer information', { 
+      orderId: order._id,
+      orderNumber: order.orderNumber
+    });
+    throw new APIError('Order data is incomplete', 500);
+  }
+
   // Return comprehensive information for customer tracking
   const customerOrderData = {
+    _id: order._id,
     orderId: order._id,
     orderNumber: order.orderNumber,
     status: order.status,
+    restaurantId: order.restaurantId?._id,
     restaurantName: order.restaurantId?.name,
+    restaurant: order.restaurantId ? {
+      _id: order.restaurantId._id,
+      name: order.restaurantId.name,
+      address: order.restaurantId.contact?.address ? 
+        `${order.restaurantId.contact.address.street}, ${order.restaurantId.contact.address.city}, ${order.restaurantId.contact.address.state} ${order.restaurantId.contact.address.zipCode}` : 
+        '',
+      phone: order.restaurantId.contact?.phone || '',
+      email: order.restaurantId.contact?.email || ''
+    } : null,
+    zoneId: order.zoneId?._id,
     zoneName: order.zoneId?.name,
+    zone: order.zoneId ? {
+      _id: order.zoneId._id,
+      name: order.zoneId.name,
+      address: order.zoneId.location || '',
+      phone: order.zoneId.contactInfo?.phone || '',
+      email: order.zoneId.contactInfo?.email || ''
+    } : null,
     tableNumber: order.tableNumber,
     customer: {
       name: order.customer.name,
@@ -1069,7 +1124,7 @@ const getOrderByNumber = catchAsync(async (req, res) => {
       discount: order.pricing?.discount || 0,
       tip: order.pricing?.tip || 0,
       total: order.pricing?.total || 0,
-      currency: order.pricing?.currency || 'USD'
+      currency: order.pricing?.currency || 'INR'
     },
     delivery: {
       type: order.delivery?.type || 'pickup',
@@ -1097,6 +1152,15 @@ const getOrderByNumber = catchAsync(async (req, res) => {
     createdAt: order.createdAt,
     updatedAt: order.updatedAt
   };
+
+  // Validate that we're sending complete data
+  if (!customerOrderData.orderNumber) {
+    logger.error('Generated customer order data missing orderNumber', { 
+      orderId: order._id,
+      orderDataKeys: Object.keys(customerOrderData)
+    });
+    throw new APIError('Failed to generate order tracking data', 500);
+  }
 
   res.status(200).json({
     success: true,
