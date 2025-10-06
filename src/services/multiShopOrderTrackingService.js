@@ -3,7 +3,7 @@ const { logger, loggerUtils } = require('../utils/logger');
 const { APIError } = require('../middleware/errorHandler');
 const socketService = require('./socketService');
 const orderCacheService = require('./orderCacheService');
-const mongoose = require('mongoose');
+const mongoose = require('mongoose'); 
 
 /**
  * Multi-Shop Order Tracking Service
@@ -308,7 +308,7 @@ class MultiShopOrderTrackingService {
 
         if (parentOrder && parentOrder.orderType === 'zone_main') {
           const parentOldStatus = parentOrder.status;
-          
+
           // Update parent order status based on all child orders (pass session to see uncommitted changes)
           await parentOrder.updateZoneMainStatus(session);
           await parentOrder.save({ session });
@@ -409,9 +409,9 @@ class MultiShopOrderTrackingService {
         orderNumber: orderNumber.toUpperCase(),
         ...(customerPhone && { 'customer.phone': customerPhone })
       })
-        .populate('restaurantId', 'name contact')
-        .populate('zoneId', 'name settings')
-        .populate('shopId', 'name contact');
+        .populate('restaurantId', 'name contact address phone email')
+        .populate('zoneId', 'name settings address location phone email contactInfo')
+        .populate('shopId', 'name contact contactInfo address phone email');
 
       if (!order) {
         throw new APIError('Order not found', 404);
@@ -429,7 +429,14 @@ class MultiShopOrderTrackingService {
         delivery: order.delivery,
         statusHistory: order.statusHistory,
         createdAt: order.createdAt,
-        updatedAt: order.updatedAt
+        updatedAt: order.updatedAt,
+        // Include populated zone, restaurant, and shop data for receipt generation
+        zone: order.zoneId,
+        zoneId: order.zoneId,
+        restaurant: order.restaurantId,
+        restaurantId: order.restaurantId,
+        shop: order.shopId,
+        shopId: order.shopId
       };
 
       if (order.orderType === 'zone_main') {
@@ -681,13 +688,24 @@ class MultiShopOrderTrackingService {
    */
   static async sendOrderCreationNotifications(mainOrder, shopOrders) {
     try {
-      // Notify each shop
+      // Notify each shop with new_order event
       for (const shopOrder of shopOrders) {
         await this.notifyShop(shopOrder.shopId, shopOrder, 'new_order');
+        logger.info('🔔 NEW ORDER notification sent to shop', {
+          shopId: shopOrder.shopId,
+          orderNumber: shopOrder.orderNumber,
+          room: `shop_${shopOrder.shopId}`
+        });
       }
 
-      // Notify zone admin
-      await this.notifyZoneAdmin(mainOrder.zoneId, mainOrder, shopOrders, 'new_zone_order');
+      // Notify zone admin with new_order event (consistent with other order types)
+      await this.notifyZoneAdmin(mainOrder.zoneId, mainOrder, shopOrders, 'new_order');
+      logger.info('🔔 NEW ORDER notification sent to zone admin', {
+        zoneId: mainOrder.zoneId,
+        orderNumber: mainOrder.orderNumber,
+        room: `zone_${mainOrder.zoneId}`,
+        shopCount: shopOrders.length
+      });
 
       // Notify customer
       await this.notifyCustomer(mainOrder.customer, mainOrder, 'order_created');

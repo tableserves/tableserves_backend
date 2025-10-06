@@ -108,9 +108,17 @@ class RealtimeOrderService {
         };
 
         // Emit different events based on order status
-        if (order.status === 'pending' && order.isNew !== false) {
+        // Check both isNew (Mongoose flag) and _isNewOrder (custom flag)
+        const isNewOrder = order._isNewOrder === true || (order.status === 'pending' && order.isNew !== false);
+
+        if (isNewOrder) {
           // New order
           io.to(`restaurant_${restaurantId}`).emit('new_order', orderData);
+          logger.info('🔔 NEW ORDER notification sent to restaurant', {
+            restaurantId,
+            orderNumber: order.orderNumber,
+            room: `restaurant_${restaurantId}`
+          });
         } else {
           // Order update
           io.to(`restaurant_${restaurantId}`).emit('order_update', orderData);
@@ -136,9 +144,14 @@ class RealtimeOrderService {
           timestamp: new Date()
         };
 
-        if (order.status === 'pending' && order.isNew !== false) {
+        // Reuse the isNewOrder variable from above
+        if (isNewOrder) {
           // New order - notify admin
           io.to('admin_dashboard').emit('new_order', adminNotificationData);
+          logger.info('🔔 NEW ORDER notification sent to admin dashboard', {
+            restaurantId,
+            orderNumber: order.orderNumber
+          });
         } else {
           // Order update - notify admin
           io.to('admin_dashboard').emit('restaurant_order_update', adminNotificationData);
@@ -185,9 +198,16 @@ class RealtimeOrderService {
         };
 
         // Emit different events based on order status
-        if (order.status === 'pending' && order.isNew !== false) {
+        const isNewOrder = order._isNewOrder === true || (order.status === 'pending' && order.isNew !== false);
+
+        if (isNewOrder) {
           // New order - emit to zone
           io.to(`zone_${zoneId}`).emit('new_order', orderData);
+          logger.info('🔔 NEW ORDER notification sent to zone', {
+            zoneId,
+            orderNumber: order.orderNumber,
+            room: `zone_${zoneId}`
+          });
         } else {
           // Order update - emit to zone
           io.to(`zone_${zoneId}`).emit('zone_order_update', orderData);
@@ -215,9 +235,16 @@ class RealtimeOrderService {
           };
 
           // Emit different events based on order status
-          if (order.status === 'pending' && order.isNew !== false) {
+          const isNewShopOrder = order._isNewOrder === true || (order.status === 'pending' && order.isNew !== false);
+
+          if (isNewShopOrder) {
             // New order - emit to shop
             io.to(`shop_${order.shopId}`).emit('new_order', shopOrderData);
+            logger.info('🔔 NEW ORDER notification sent to shop', {
+              shopId: order.shopId,
+              orderNumber: order.orderNumber,
+              room: `shop_${order.shopId}`
+            });
           } else {
             // Order update - emit to shop
             io.to(`shop_${order.shopId}`).emit('shop_order_update', shopOrderData);
@@ -236,9 +263,14 @@ class RealtimeOrderService {
           timestamp: new Date()
         };
 
-        if (order.status === 'pending' && order.isNew !== false) {
+        // Reuse the isNewOrder variable from above
+        if (isNewOrder) {
           // New zone order - notify admin
           io.to('admin_dashboard').emit('new_order', adminZoneNotificationData);
+          logger.info('🔔 NEW ZONE ORDER notification sent to admin dashboard', {
+            zoneId,
+            orderNumber: order.orderNumber
+          });
         } else {
           // Zone order update - notify admin
           io.to('admin_dashboard').emit('zone_order_update', adminZoneNotificationData);

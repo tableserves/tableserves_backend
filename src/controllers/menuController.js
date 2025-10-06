@@ -676,9 +676,28 @@ class MenuController {
     
     await this.checkOwnerPermissions(req, ownerType, ownerId);
 
+    // Transform image field to images array format if provided
+    const updateData = { ...req.body };
+    
+    if (updateData.image !== undefined) {
+      if (updateData.image && updateData.image !== 'null' && updateData.image.trim()) {
+        // Extract publicId from Cloudinary URL or use a generated one
+        const publicId = updateData.image.includes('cloudinary.com') 
+          ? updateData.image.split('/').pop().split('.')[0] 
+          : `menu_item_${Date.now()}`;
+        
+        updateData.images = [{ url: updateData.image.trim(), publicId, isPrimary: true }];
+        console.log('Update: Image data being saved:', { url: updateData.image.trim(), publicId, isPrimary: true });
+      } else {
+        updateData.images = [];
+        console.log('Update: Clearing images array');
+      }
+      delete updateData.image; // Remove the image field as we're using images array
+    }
+
     const item = await MenuItem.findOneAndUpdate(
       { _id: itemId, [`${ownerType}Id`]: ownerId },
-      req.body,
+      updateData,
       { new: true, runValidators: true }
     );
 

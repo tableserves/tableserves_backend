@@ -180,13 +180,26 @@ class ZoneOrderSplittingService {
         });
 
         await shopOrder.save();
+
+        // CRITICAL: Mark as new order for notification logic (after save)
+        // This flag is checked by notification services to emit 'new_order' event
+        shopOrder._isNewOrder = true;
+        shopOrder.isNew = false; // Reset Mongoose flag to prevent conflicts
+
         shopOrders.push(shopOrder);
 
         // Update main order with shop order reference
         mainOrder.shopOrders.push(shopOrder._id);
 
-        // Send real-time notification to shop
+        // Send real-time notification to shop - MUST happen after _isNewOrder flag is set
         await this.notifyShop(shopGroup.shopId, shopOrder);
+        
+        logger.info('✅ Shop order created and notification sent', {
+          shopOrderNumber,
+          shopId: shopGroup.shopId,
+          shopName: shopGroup.shopName,
+          itemCount: shopGroup.items.length
+        });
 
         totalEstimatedTime = Math.max(totalEstimatedTime, shopGroup.estimatedTime || 20);
       }
@@ -195,11 +208,23 @@ class ZoneOrderSplittingService {
       mainOrder.delivery.estimatedTime = totalEstimatedTime;
       await mainOrder.save();
 
-      // Send real-time notification to zone admin
+      // CRITICAL: Mark main order as new for notification logic (after save)
+      // This flag is checked by notification services to emit 'new_order' event
+      mainOrder._isNewOrder = true;
+      mainOrder.isNew = false; // Reset Mongoose flag to prevent conflicts
+
+      // Send real-time notification to zone admin - MUST happen after _isNewOrder flag is set
       await this.notifyZoneAdmin(zoneId, mainOrder, shopOrders);
 
       // Send real-time notification to customer
       await this.notifyCustomer(customer, mainOrder);
+      
+      logger.info('✅ Zone main order created and notifications sent', {
+        mainOrderNumber: mainOrder.orderNumber,
+        zoneId,
+        shopCount: shopOrders.length,
+        totalAmount: pricing.total
+      });
 
       loggerUtils.logBusiness('Zone order processed with splitting', mainOrder._id, {
         zoneId,
@@ -313,7 +338,7 @@ class ZoneOrderSplittingService {
       if (typeof socketService !== 'undefined' && socketService && typeof socketService.getIO === 'function') {
         const io = socketService.getIO();
         if (io) {
-          io.to(`shop_${shopId}`).emit('new_order', {
+          const shopOrderData = {
             orderId: order._id,
             orderNumber: order.orderNumber,
             items: order.items,
@@ -323,6 +348,16 @@ class ZoneOrderSplittingService {
             estimatedTime: order.delivery.estimatedTime,
             specialInstructions: order.specialInstructions,
             timestamp: new Date()
+          };
+
+          io.to(`shop_${shopId}`).emit('new_order', shopOrderData);
+
+          logger.info('🔔 NEW ORDER notification sent to shop', {
+            shopId,
+            orderId: order._id,
+            orderNumber: order.orderNumber,
+            room: `shop_${shopId}`,
+            itemCount: order.items?.length || 0
           });
         }
       } else {
@@ -350,7 +385,7 @@ class ZoneOrderSplittingService {
       if (typeof socketService !== 'undefined' && socketService && typeof socketService.getIO === 'function') {
         const io = socketService.getIO();
         if (io) {
-          io.to(`zone_${zoneId}`).emit('new_zone_order', {
+          const zoneOrderData = {
             orderId: mainOrder._id,
             orderNumber: mainOrder.orderNumber,
             shopCount: shopOrders.length,
@@ -364,6 +399,17 @@ class ZoneOrderSplittingService {
               subtotal: order.pricing.subtotal
             })),
             timestamp: new Date()
+          };
+
+          // Emit as new_order for consistency with other order types
+          io.to(`zone_${zoneId}`).emit('new_order', zoneOrderData);
+
+          logger.info('🔔 NEW ZONE ORDER notification sent to zone admin', {
+            zoneId,
+            orderId: mainOrder._id,
+            orderNumber: mainOrder.orderNumber,
+            room: `zone_${zoneId}`,
+            shopCount: shopOrders.length
           });
         }
       } else {

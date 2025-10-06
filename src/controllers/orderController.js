@@ -564,14 +564,24 @@ const handleRestaurantOrder = async (req, res, customerUser) => {
   };
 
   const order = new Order(orderData);
-  order.isNew = true; // Mark as new order for real-time notifications
   await order.save();
 
-  // Send real-time notification to restaurant
+  // CRITICAL: Mark as new order for notification logic (after save)
+  // This flag is checked by notification services to emit 'new_order' event
+  order._isNewOrder = true;
+  order.isNew = false; // Reset Mongoose flag to prevent conflicts
+  
+  // Send real-time notification to restaurant - MUST happen after _isNewOrder flag is set
   try {
     await realtimeOrderService.notifyRestaurant(restaurantId, order);
+    logger.info('✅ Restaurant order created and notification sent', {
+      orderNumber: order.orderNumber,
+      restaurantId,
+      tableNumber,
+      total
+    });
   } catch (notificationError) {
-    console.error('Failed to send real-time notification:', notificationError);
+    logger.error('❌ Failed to send real-time notification:', notificationError);
     // Don't fail the order creation if notification fails
   }
 
@@ -1044,13 +1054,14 @@ const getOrderByNumber = catchAsync(async (req, res) => {
     throw new APIError('Invalid phone number format', 400);
   }
 
-  // Populate complete restaurant and zone data for receipts
+  // Populate complete restaurant, zone, and shop data for receipts
   const order = await Order.findOne({ 
     orderNumber: sanitizedOrderNumber,
     'customer.phone': sanitizedPhone
   })
-    .populate('restaurantId', 'name contact settings.theme')
-    .populate('zoneId');
+    .populate('restaurantId', 'name contact settings.theme taxInfo')
+    .populate('zoneId', 'name location contactInfo taxInfo')
+    .populate('shopId', 'name contactInfo taxInfo');
 
   if (!order) {
     logger.info('Order not found in database', { 
@@ -1083,6 +1094,7 @@ const getOrderByNumber = catchAsync(async (req, res) => {
     orderId: order._id,
     orderNumber: order.orderNumber,
     status: order.status,
+    orderType: order.orderType,
     restaurantId: order.restaurantId?._id,
     restaurantName: order.restaurantId?.name,
     restaurant: order.restaurantId ? {
@@ -1092,7 +1104,8 @@ const getOrderByNumber = catchAsync(async (req, res) => {
         `${order.restaurantId.contact.address.street}, ${order.restaurantId.contact.address.city}, ${order.restaurantId.contact.address.state} ${order.restaurantId.contact.address.zipCode}` : 
         '',
       phone: order.restaurantId.contact?.phone || '',
-      email: order.restaurantId.contact?.email || ''
+      email: order.restaurantId.contact?.email || '',
+      gstin: order.restaurantId.taxInfo?.gstin || ''
     } : null,
     zoneId: order.zoneId?._id,
     zoneName: order.zoneId?.name,
@@ -1100,8 +1113,22 @@ const getOrderByNumber = catchAsync(async (req, res) => {
       _id: order.zoneId._id,
       name: order.zoneId.name,
       address: order.zoneId.location || '',
+      location: order.zoneId.location || '',
       phone: order.zoneId.contactInfo?.phone || '',
-      email: order.zoneId.contactInfo?.email || ''
+      email: order.zoneId.contactInfo?.email || '',
+      gstin: order.zoneId.taxInfo?.gstin || '',
+      contactInfo: order.zoneId.contactInfo || {}
+    } : null,
+    shopId: order.shopId?._id,
+    shopName: order.shopId?.name,
+    shop: order.shopId ? {
+      _id: order.shopId._id,
+      name: order.shopId.name,
+      address: order.shopId.contactInfo?.address || '',
+      phone: order.shopId.contactInfo?.phone || '',
+      email: order.shopId.contactInfo?.email || '',
+      gstin: order.shopId.taxInfo?.gstin || '',
+      contactInfo: order.shopId.contactInfo || {}
     } : null,
     tableNumber: order.tableNumber,
     customer: {
