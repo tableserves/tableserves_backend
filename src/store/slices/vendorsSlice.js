@@ -1,5 +1,5 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import { zoneAPI } from '../../services/api';
+import { zoneAPI } from '../../shared/api/api';
 
 // Fetch vendors for a zone
 export const fetchVendors = createAsyncThunk(

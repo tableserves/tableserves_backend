@@ -1,4 +1,5 @@
-const { catchAsync, APIError } = require('../middleware/errorHandler');
+const { APIError } = require('../middleware/errorHandler');
+const catchAsync = require('../utils/catchAsync');
 const { User, Subscription, Restaurant, Order } = require('../models');
 const { logger, loggerUtils } = require('../utils/logger');
 
@@ -317,13 +318,29 @@ const deleteUser = catchAsync(async (req, res) => {
 
   if (hardDelete) {
     // Hard delete - remove from database (use with caution)
-    await User.findByIdAndDelete(id);
+    // Also delete related data based on user role
+    if (user.role === 'restaurant_owner') {
+      const Restaurant = require('../models/Restaurant');
+      const Subscription = require('../models/Subscription');
+      await Promise.all([
+        Restaurant.deleteMany({ ownerId: id }),
+        Subscription.deleteMany({ userId: id })
+      ]);
+    } else if (user.role === 'zone_admin') {
+      const Zone = require('../models/Zone');
+      const Subscription = require('../models/Subscription');
+      await Promise.all([
+        Zone.deleteMany({ adminId: id }),
+        Subscription.deleteMany({ userId: id })
+      ]);
+    } else {
+      // For other user types, just delete subscriptions
+      const Subscription = require('../models/Subscription');
+      await Subscription.deleteMany({ userId: id });
+    }
     
-    // Also delete related data
-    await Promise.all([
-      Restaurant.deleteMany({ ownerId: id }),
-      Subscription.deleteMany({ userId: id })
-    ]);
+    // Finally delete the user itself
+    await User.findByIdAndDelete(id);
   } else {
     // Soft delete - deactivate account
     user.status = 'inactive';

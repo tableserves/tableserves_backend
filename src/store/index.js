@@ -1,22 +1,11 @@
 import { configureStore, combineReducers } from '@reduxjs/toolkit';
-import {
-  persistStore,
-  persistReducer,
-  FLUSH,
-  REHYDRATE,
-  PAUSE,
-  PERSIST,
-  PURGE,
-  REGISTER,
-} from 'redux-persist';
-import storage from 'redux-persist/lib/storage'; // defaults to localStorage for web
-import StorageCleanup from '../utils/storageCleanup';
 
 // Consolidated slices
 import menuReducer from './slices/menuSlice';
 import ordersReducer from './slices/ordersSlice';
 import entitiesReducer from './slices/entitiesSlice';
 import uiReducer from './slices/uiSlice';
+import realtimeReducer from './slices/realtimeSlice';
 
 // Remaining individual slices
 import subscriptionReducer from './slices/subscriptionSlice';
@@ -27,104 +16,8 @@ import { api } from './api';
 
 // Import custom middleware
 import menuItemsMiddleware from './middleware/menuItemsMiddleware';
-import persistenceMiddleware from './middleware/persistenceMiddleware';
 
-// Custom storage with quota error handling
-const customStorage = {
-  ...storage,
-  setItem: async (key, value) => {
-    try {
-      await storage.setItem(key, value);
-    } catch (error) {
-      if (error.name === 'QuotaExceededError') {
-        console.warn('⚠️ localStorage quota exceeded, attempting cleanup...');
-        
-        // Perform emergency cleanup
-        const cleanupResult = StorageCleanup.emergencyCleanup();
-        
-        if (cleanupResult.success) {
-          console.log(`✅ Cleanup successful, freed ${cleanupResult.freedMB}MB`);
-          
-          // Try to store again after cleanup
-          try {
-            await storage.setItem(key, value);
-            console.log('✅ Successfully stored data after cleanup');
-          } catch (retryError) {
-            console.error('❌ Still unable to store after cleanup:', retryError);
-            // Fallback: store only essential data
-            if (key === 'persist:root') {
-              try {
-                const data = JSON.parse(value);
-                const essentialData = {
-                  ui: data.ui, // Keep auth and theme
-                  cart: data.cart, // Keep current cart
-                  _persist: data._persist
-                };
-                await storage.setItem(key, JSON.stringify(essentialData));
-                console.log('✅ Stored essential data only');
-              } catch (essentialError) {
-                console.error('❌ Failed to store essential data:', essentialError);
-              }
-            }
-          }
-        } else {
-          console.error('❌ Emergency cleanup failed:', cleanupResult.error);
-        }
-      } else {
-        console.error('Storage error:', error);
-        throw error;
-      }
-    }
-  }
-};
-
-const persistConfig = {
-  key: 'root',
-  version: 1,
-  storage: customStorage,
-  whitelist: ['ui', 'cart', 'orders'], // Include orders for persistence
-  // Partial persistence for orders to avoid large data
-  transforms: [
-    {
-      in: (inboundState, key) => {
-        if (key === 'orders') {
-          // Only persist essential order data
-          return {
-            currentOrder: inboundState.currentOrder,
-            currentRole: inboundState.currentRole,
-            currentEntityId: inboundState.currentEntityId,
-            filters: inboundState.filters,
-            lastUpdateTime: inboundState.lastUpdateTime
-          };
-        }
-        return inboundState;
-      },
-      out: (outboundState, key) => {
-        if (key === 'orders') {
-          // Restore with default values for non-persisted data
-          return {
-            ...outboundState,
-            orders: outboundState.orders || [],
-            liveOrders: outboundState.liveOrders || [],
-            ordersLoading: outboundState.ordersLoading || false,
-            ordersError: outboundState.ordersError || null,
-            liveOrdersLoading: outboundState.liveOrdersLoading || false,
-            liveOrdersError: outboundState.liveOrdersError || null,
-            currentOrderLoading: outboundState.currentOrderLoading || false,
-            currentOrderError: outboundState.currentOrderError || null,
-            pagination: outboundState.pagination || {
-              page: 1,
-              limit: 20,
-              total: 0,
-            },
-            autoRefresh: outboundState.autoRefresh || false,
-          };
-        }
-        return outboundState;
-      }
-    }
-  ]
-};
+// No persistence configuration - using server-side sessions only
 
 const rootReducer = combineReducers({
   // Consolidated slices (reduced from 18 to 6 slices + RTK Query)
@@ -132,6 +25,7 @@ const rootReducer = combineReducers({
   orders: ordersReducer,       // Replaces: orders, order
   entities: entitiesReducer,   // Replaces: restaurant, zone, vendors
   ui: uiReducer,              // Replaces: auth, theme, dashboard
+  realtime: realtimeReducer,   // Real-time WebSocket state
   
   // Individual slices
   subscription: subscriptionReducer,
@@ -141,19 +35,85 @@ const rootReducer = combineReducers({
   [api.reducerPath]: api.reducer,
 });
 
-const persistedReducer = persistReducer(persistConfig, rootReducer);
-
 export const store = configureStore({
-  reducer: persistedReducer,
+  reducer: rootReducer,
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({
       serializableCheck: {
-        ignoredActions: [FLUSH, REHYDRATE, PAUSE, PERSIST, PURGE, REGISTER],
+        ignoredActions: [
+          // Ignore RTK Query actions
+          'api/executeQuery/pending',
+          'api/executeQuery/fulfilled',
+          'api/executeQuery/rejected',
+          // Ignore menu actions that might contain Promises
+          'menu/fetchMenuItems/pending',
+          'menu/fetchMenuItems/fulfilled',
+          'menu/fetchMenuItems/rejected',
+          'menu/fetchMenuCategories/pending',
+          'menu/fetchMenuCategories/fulfilled',
+          'menu/fetchMenuCategories/rejected',
+          'menu/hydrateMenuData/pending',
+          'menu/hydrateMenuData/fulfilled',
+          'menu/hydrateMenuData/rejected',
+          // Ignore entities actions
+          'entities/fetchRestaurantDetails/pending',
+          'entities/fetchRestaurantDetails/fulfilled',
+          'entities/fetchRestaurantDetails/rejected',
+          'entities/fetchZoneAndShops/pending',
+          'entities/fetchZoneAndShops/fulfilled',
+          'entities/fetchZoneAndShops/rejected',
+          // Ignore UI actions
+          'ui/fetchDashboardStats/pending',
+          'ui/fetchDashboardStats/fulfilled',
+          'ui/fetchDashboardStats/rejected',
+          // Ignore subscription actions
+          'subscription/fetchCounts/pending',
+          'subscription/fetchCounts/fulfilled',
+          'subscription/fetchCounts/rejected',
+          'subscription/fetchCurrentSubscription/pending',
+          'subscription/fetchCurrentSubscription/fulfilled',
+          'subscription/fetchCurrentSubscription/rejected',
+          'subscription/fetchSubscriptionLimits/pending',
+          'subscription/fetchSubscriptionLimits/fulfilled',
+          'subscription/fetchSubscriptionLimits/rejected',
+          'ui/initializeTheme',
+          // Ignore subscription actions
+          'subscription/fetchCurrent/pending',
+          'subscription/fetchCurrent/fulfilled',
+          'subscription/fetchCurrent/rejected',
+          'subscription/fetchLimits/pending',
+          'subscription/fetchLimits/fulfilled',
+          'subscription/fetchLimits/rejected',
+          'subscription/fetchCounts/pending',
+          'subscription/fetchCounts/fulfilled',
+          'subscription/fetchCounts/rejected',
+        ],
+        // Ignore RTK Query state paths and other problematic paths
+        ignoredActionsPaths: [
+          'meta.arg',
+          'payload.timestamp',
+          'payload.items',
+          'payload.categories',
+          'payload.modifiers',
+          'payload.analytics',
+          'payload.menuCategories'
+        ],
+        ignoredPaths: [
+          'api',
+          'menu.items',
+          'menu.categories',
+          'menu.modifiers',
+          'entities.restaurants',
+          'entities.zones',
+          'entities.vendorsByZone',
+          'ui.dashboard.stats.restaurantProfile.analytics',
+          'ui.dashboard.stats.restaurantProfile.menuCategories',
+          'ui.dashboard.stats.profile.analytics',
+          'subscription.currentCounts',
+          'subscription.limits'
+        ],
       },
     })
     .concat(menuItemsMiddleware)
-    .concat(persistenceMiddleware) // Add our custom persistence middleware
     .concat(api.middleware), // Add RTK Query middleware
 });
-
-export const persistor = persistStore(store);

@@ -47,12 +47,13 @@ const comparePassword = async (password, hashedPassword) => {
  */
 const validatePassword = (password) => {
   const errors = [];
-  
+
   if (!password) {
     errors.push('Password is required');
     return { isValid: false, errors };
   }
 
+  // Updated requirement: minimum 8 characters
   if (password.length < 8) {
     errors.push('Password must be at least 8 characters long');
   }
@@ -61,24 +62,30 @@ const validatePassword = (password) => {
     errors.push('Password must be less than 128 characters long');
   }
 
-  if (!/(?=.*[a-z])/.test(password)) {
+  // Check for required character types
+  const hasLowercase = /[a-z]/.test(password);
+  const hasUppercase = /[A-Z]/.test(password);
+  const hasNumber = /\d/.test(password);
+  const hasSpecialChar = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password);
+
+  if (!hasLowercase) {
     errors.push('Password must contain at least one lowercase letter');
   }
 
-  if (!/(?=.*[A-Z])/.test(password)) {
+  if (!hasUppercase) {
     errors.push('Password must contain at least one uppercase letter');
   }
 
-  if (!/(?=.*\d)/.test(password)) {
+  if (!hasNumber) {
     errors.push('Password must contain at least one number');
   }
 
-  if (!/(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?])/.test(password)) {
+  if (!hasSpecialChar) {
     errors.push('Password must contain at least one special character');
   }
 
   const commonPasswords = [
-    'password', '123456', '123456789', 'qwerty', 'abc123', 
+    'password', '123456', '123456789', 'qwerty', 'abc123',
     'password123', 'admin', 'letmein', 'welcome', 'monkey'
   ];
 
@@ -174,6 +181,7 @@ const validateEmail = (email) => {
   return {
     isValid: errors.length === 0,
     errors,
+    email: email.toLowerCase().trim(), // Return normalized email
     domain
   };
 };
@@ -203,7 +211,7 @@ const validatePhone = (phone) => {
   }
 
   // Basic international phone format check
-  const phoneRegex = /^[\+]?[1-9][\d]{0,15}$/;
+  const phoneRegex = /^[1-9][\d]{9,14}$/;
   if (!phoneRegex.test(digitsOnly)) {
     errors.push('Invalid phone number format');
   }
@@ -351,30 +359,80 @@ const authenticateUser = async (email, password, userFromDB) => {
       throw new APIError('Account is inactive', 401);
     }
 
+    // Check if password hash exists
+    if (!userFromDB.passwordHash) {
+      loggerUtils.logAuth('Authentication failed - No password hash', userFromDB._id);
+      throw new APIError('Account setup incomplete', 401);
+    }
+
     // Verify password
     const isPasswordValid = await comparePassword(password, userFromDB.passwordHash);
-    
+
     if (!isPasswordValid) {
       loggerUtils.logAuth('Authentication failed - Invalid password', userFromDB._id);
       throw new APIError('Invalid credentials', 401);
     }
 
+    // Fetch associated business entity based on user role
+    let businessEntity = null;
+    try {
+      const { Restaurant, Zone } = require('../models');
+      
+      if (userFromDB.role === 'restaurant_owner') {
+        businessEntity = await Restaurant.findOne({ ownerId: userFromDB._id });
+      } else if (['zone_admin', 'zone_shop', 'zone_vendor'].includes(userFromDB.role)) {
+        businessEntity = await Zone.findOne({ ownerId: userFromDB._id });
+      }
+    } catch (businessError) {
+      logger.warn('Could not fetch business entity for user', {
+        userId: userFromDB._id,
+        role: userFromDB.role,
+        error: businessError.message
+      });
+      // Don't fail authentication if business entity fetch fails
+    }
+
     // Generate tokens
     const tokens = generateTokenPair(userFromDB);
 
+    // Prepare user response with business entity information
+    const userResponse = {
+      id: userFromDB._id,
+      email: userFromDB.email,
+      role: userFromDB.role,
+      profile: userFromDB.profile,
+      status: userFromDB.status,
+      emailVerified: userFromDB.emailVerified,
+      phoneVerified: userFromDB.phoneVerified
+    };
+
+    // Add business entity information based on role
+    if (businessEntity) {
+      if (userFromDB.role === 'restaurant_owner') {
+        userResponse.restaurantId = businessEntity._id;
+        userResponse.restaurantName = businessEntity.name;
+        // Add other relevant restaurant fields if needed
+      } else if (['zone_admin', 'zone_shop', 'zone_vendor'].includes(userFromDB.role)) {
+        userResponse.zoneId = businessEntity._id;
+        userResponse.zoneName = businessEntity.name;
+        // For zone_shop and zone_vendor, we might need shop-specific info
+        if (['zone_shop', 'zone_vendor'].includes(userFromDB.role)) {
+          // This might require additional logic to find the specific shop
+          // For now, we'll include the zone information
+        }
+      }
+    }
+
     loggerUtils.logAuth('Authentication successful', userFromDB._id, {
       role: userFromDB.role,
-      email: userFromDB.email
+      email: userFromDB.email,
+      hasBusinessEntity: !!businessEntity
     });
 
     return {
-      user: {
-        id: userFromDB._id,
-        email: userFromDB.email,
-        role: userFromDB.role,
-        profile: userFromDB.profile
-      },
-      tokens
+      user: userResponse,
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken
     };
   } catch (error) {
     logger.error('Authentication error:', error);

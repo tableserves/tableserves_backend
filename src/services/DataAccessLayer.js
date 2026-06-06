@@ -2,9 +2,10 @@
  * Centralized Data Access Layer for TableServe Application
  * 
  * This service provides a unified interface for all data operations,
- * replacing scattered localStorage usage and inconsistent data access patterns.
+ * with real-time synchronization and fallback mechanisms.
  * 
  * Features:
+ * - Real-time data synchronization
  * - Centralized data storage and retrieval
  * - Automatic Redux synchronization
  * - Data validation and transformation
@@ -16,7 +17,7 @@
 import { store } from '../store';
 import { setVendors } from '../store/slices/vendorsSlice';
 import logger from './LoggingService';
-import cachingService from './CachingService';
+import cachingService from '../shared/cache/CachingService';
 
 // Storage key configuration
 const STORAGE_KEYS = {
@@ -72,39 +73,80 @@ class DataAccessLayer {
     this.cache = new Map();
     this.cacheTimestamps = new Map();
     this.cacheTimeout = 5 * 60 * 1000; // 5 minutes
+    // Real-time service disabled for database-only mode
+    this.realTimeService = null;
+    // Don't initialize real-time sync
+  }
+
+  /**
+   * Initialize real-time synchronization (disabled for database-only mode)
+   */
+  async initializeRealTimeSync() {
+    // Real-time service disabled - using database-only mode
+    logger.info('Real-time synchronization disabled - using database-only mode', null, 'DataAccessLayer');
+  }
+
+  /**
+   * Setup real-time event handlers (disabled for database-only mode)
+   */
+  setupRealTimeEventHandlers() {
+    // Real-time event handlers disabled - using database-only mode
+    logger.debug('Real-time event handlers disabled', null, 'DataAccessLayer');
+  }
+
+  /**
+   * Handle real-time data updates (disabled for database-only mode)
+   */
+  async handleRealTimeUpdate(key, data) {
+    // Real-time updates disabled - using database-only mode
+    logger.debug('Real-time update ignored - database-only mode', { key }, 'DataAccessLayer');
+  }
+
+  /**
+   * Handle real-time data deletions (disabled for database-only mode)
+   */
+  async handleRealTimeDelete(key) {
+    // Real-time deletions disabled - using database-only mode
+    logger.debug('Real-time deletion ignored - database-only mode', { key }, 'DataAccessLayer');
+  }
+
+  /**
+   * Update Redux store based on key
+   */
+  updateReduxStore(key, data) {
+    try {
+      if (key.includes('vendors')) {
+        store.dispatch(setVendors(Array.isArray(data) ? data : []));
+      }
+      // Add more Redux updates as needed
+    } catch (error) {
+      logger.error('Failed to update Redux store', error, 'DataAccessLayer');
+    }
   }
 
   // ===== CORE DATA ACCESS METHODS =====
 
   /**
-   * Generic method to get data using enhanced caching
+   * Generic method to get data directly from API
    * @param {string} key - Storage key
    * @param {*} defaultValue - Default value if not found
    * @param {boolean} useCache - Whether to use caching
-   * @returns {*} Retrieved data
+   * @returns {Promise<*>} Retrieved data
    */
-  getData(key, defaultValue = null, useCache = true) {
+  async getData(key, defaultValue = null, useCache = true) {
     try {
+      // Check cache first if enabled
       if (useCache) {
-        // Use enhanced caching service
         const cachedData = cachingService.get(key, null);
         if (cachedData !== null) {
-          logger.debug('Data retrieved from enhanced cache', { key }, 'DataAccessLayer');
+          logger.debug('Data retrieved from cache', { key }, 'DataAccessLayer');
           return cachedData;
         }
       }
 
-      // Fallback to localStorage for backward compatibility
-      const stored = localStorage.getItem(key);
-      const data = stored ? JSON.parse(stored) : defaultValue;
-
-      // Cache the data if found and caching is enabled
-      if (useCache && data !== null) {
-        cachingService.set(key, data);
-      }
-
-      logger.debug('Data retrieved from localStorage', { key, hasData: !!data }, 'DataAccessLayer');
-      return data;
+      // No local storage - return default value and let API calls handle data fetching
+      logger.debug('No cached data found, returning default value', { key, defaultValue }, 'DataAccessLayer');
+      return defaultValue;
     } catch (error) {
       logger.error(`Failed to get data for key: ${key}`, error, 'DataAccessLayer');
       return defaultValue;
@@ -112,45 +154,24 @@ class DataAccessLayer {
   }
 
   /**
-   * Generic method to set data using enhanced caching
+   * Generic method to set data in cache only (no local storage)
    * @param {string} key - Storage key
    * @param {*} data - Data to store
    * @param {boolean} useCache - Whether to use caching
    * @param {number} ttl - Time to live for cache
-   * @returns {boolean} Success status
+   * @returns {Promise<boolean>} Success status
    */
-  setData(key, data, useCache = true, ttl = 15 * 60 * 1000) {
+  async setData(key, data, useCache = true, ttl = 15 * 60 * 1000) {
     try {
-      // Use enhanced caching service
+      // Only update cache - no local storage or real-time service
       if (useCache) {
         cachingService.set(key, data, ttl);
+        logger.debug('Data cached successfully', { key }, 'DataAccessLayer');
       }
 
-      // Store in localStorage for critical data and menu data
-      const criticalKeys = [
-        STORAGE_KEYS.RESTAURANTS,
-        STORAGE_KEYS.ZONES,
-        STORAGE_KEYS.SHOP_CREDENTIALS,
-        STORAGE_KEYS.CUSTOMERS,
-        STORAGE_KEYS.SUBSCRIPTION
-      ];
-      
-      // Always persist menu data, categories, credentials, and customers to localStorage
-      const shouldPersist = criticalKeys.includes(key) || 
-                           key.includes('credentials') || 
-                           key.includes('customers') ||
-                           key.includes('menu_categories') ||
-                           key.includes('menu_items') ||
-                           key.includes('menu_modifiers');
-      
-      if (shouldPersist) {
-        localStorage.setItem(key, JSON.stringify(data));
-      }
-
-      logger.debug('Data stored successfully', { key, useCache, persistent: shouldPersist }, 'DataAccessLayer');
       return true;
     } catch (error) {
-      logger.error(`Failed to set data for key: ${key}`, error, 'DataAccessLayer');
+      logger.error(`Failed to cache data for key: ${key}`, error, 'DataAccessLayer');
       return false;
     }
   }
@@ -162,20 +183,17 @@ class DataAccessLayer {
    */
   deleteData(key) {
     try {
-      // Remove from enhanced cache
+      // Remove from enhanced cache only
       cachingService.delete(key);
-      
-      // Remove from localStorage
-      localStorage.removeItem(key);
       
       // Also remove from legacy cache for backward compatibility
       this.cache.delete(key);
       this.cacheTimestamps.delete(key);
       
-      logger.debug('Data deleted successfully', { key }, 'DataAccessLayer');
+      logger.debug('Data deleted from cache successfully', { key }, 'DataAccessLayer');
       return true;
     } catch (error) {
-      logger.error(`Failed to delete data for key: ${key}`, error, 'DataAccessLayer');
+      logger.error(`Failed to delete cached data for key: ${key}`, error, 'DataAccessLayer');
       return false;
     }
   }
@@ -237,26 +255,26 @@ class DataAccessLayer {
 
   // ===== RESTAURANT OPERATIONS =====
 
-  getRestaurants() {
-    return this.getData(STORAGE_KEYS.RESTAURANTS, []);
+  async getRestaurants() {
+    return await this.getData(STORAGE_KEYS.RESTAURANTS, []);
   }
 
-  getRestaurant(restaurantId) {
-    const restaurants = this.getRestaurants();
+  async getRestaurant(restaurantId) {
+    const restaurants = await this.getRestaurants();
     return restaurants.find(r => r.id == restaurantId) || null;
   }
 
-  saveRestaurants(restaurants) {
-    const success = this.setData(STORAGE_KEYS.RESTAURANTS, restaurants);
+  async saveRestaurants(restaurants) {
+    const success = await this.setData(STORAGE_KEYS.RESTAURANTS, restaurants);
     if (success) {
       this.clearCache('restaurant');
     }
     return success;
   }
 
-  addRestaurant(restaurantData) {
+  async addRestaurant(restaurantData) {
     try {
-      const restaurants = this.getRestaurants();
+      const restaurants = await this.getRestaurants();
       const newRestaurant = {
         ...restaurantData,
         id: Date.now().toString(),
@@ -266,7 +284,7 @@ class DataAccessLayer {
       };
       
       restaurants.push(newRestaurant);
-      const success = this.saveRestaurants(restaurants);
+      const success = await this.saveRestaurants(restaurants);
       
       if (success) {
         logger.info('Restaurant added successfully', { restaurantId: newRestaurant.id }, 'DataAccessLayer');
@@ -280,9 +298,9 @@ class DataAccessLayer {
     }
   }
 
-  updateRestaurant(restaurantId, updates) {
+  async updateRestaurant(restaurantId, updates) {
     try {
-      const restaurants = this.getRestaurants();
+      const restaurants = await this.getRestaurants();
       const index = restaurants.findIndex(r => r.id == restaurantId);
       
       if (index !== -1) {
@@ -292,7 +310,7 @@ class DataAccessLayer {
           updatedAt: new Date().toISOString()
         };
         
-        const success = this.saveRestaurants(restaurants);
+        const success = await this.saveRestaurants(restaurants);
         if (success) {
           logger.info('Restaurant updated successfully', { restaurantId }, 'DataAccessLayer');
           return restaurants[index];
@@ -306,14 +324,14 @@ class DataAccessLayer {
     }
   }
 
-  deleteRestaurant(restaurantId) {
+  async deleteRestaurant(restaurantId) {
     try {
-      const restaurants = this.getRestaurants();
+      const restaurants = await this.getRestaurants();
       const filtered = restaurants.filter(r => r.id !== restaurantId);
       const removed = filtered.length < restaurants.length;
       
       if (removed) {
-        this.saveRestaurants(filtered);
+        await this.saveRestaurants(filtered);
         // Clean up related data
         this.deleteData(STORAGE_KEYS.restaurantOrders(restaurantId));
         this.deleteData(STORAGE_KEYS.restaurantAnalytics(restaurantId));
@@ -332,17 +350,18 @@ class DataAccessLayer {
 
   // ===== ZONE OPERATIONS =====
 
-  getZones() {
-    return this.getData(STORAGE_KEYS.ZONES, []);
+  async getZones() {
+    return await this.getData(STORAGE_KEYS.ZONES, []);
   }
 
-  getZone(zoneId) {
-    const zones = this.getZones();
-    return zones.find(z => z.id == zoneId) || null;
+  async getZone(zoneId) {
+    const zones = await this.getZones();
+    const zonesArray = Array.isArray(zones) ? zones : [];
+    return zonesArray.find(z => z && z.id == zoneId) || null;
   }
 
-  saveZones(zones) {
-    const success = this.setData(STORAGE_KEYS.ZONES, zones);
+  async saveZones(zones) {
+    const success = await this.setData(STORAGE_KEYS.ZONES, zones);
     if (success) {
       this.clearCache('zone');
     }
@@ -427,80 +446,60 @@ class DataAccessLayer {
 
   // ===== VENDOR OPERATIONS =====
 
-  getVendors(zoneId) {
+  async getVendors(zoneId) {
     try {
-      // Get from both storage locations and merge
-      const zoneVendors = this.getData(STORAGE_KEYS.zoneVendors(zoneId), []);
-      const adminVendors = this.getData(STORAGE_KEYS.adminVendors(zoneId), []);
+      // Check cache first
+      const cachedVendors = cachingService.get(STORAGE_KEYS.zoneVendors(zoneId), null);
+      if (cachedVendors && Array.isArray(cachedVendors)) {
+        logger.debug('Vendors retrieved from cache', { zoneId, count: cachedVendors.length }, 'DataAccessLayer');
+        return cachedVendors;
+      }
       
-      // Merge with preference for zone vendors (more recent)
-      const vendorMap = new Map();
-      
-      adminVendors.forEach(vendor => {
-        vendorMap.set(vendor.id, { ...vendor, zoneId });
-      });
-      
-      zoneVendors.forEach(vendor => {
-        vendorMap.set(vendor.id, { ...vendor, zoneId });
-      });
-      
-      const mergedVendors = Array.from(vendorMap.values());
-      
-      // Sync both storage locations
-      this.setData(STORAGE_KEYS.zoneVendors(zoneId), mergedVendors, false);
-      this.setData(STORAGE_KEYS.adminVendors(zoneId), mergedVendors, false);
-      
-      // Update Redux store
-      store.dispatch(setVendors(mergedVendors));
-      
-      return mergedVendors;
+      // No cached data - return empty array, let API calls handle data fetching
+      logger.debug('No cached vendors found', { zoneId }, 'DataAccessLayer');
+      return [];
     } catch (error) {
       logger.error('Failed to get vendors', error, 'DataAccessLayer');
       return [];
     }
   }
 
-  saveVendors(zoneId, vendors) {
+  async saveVendors(zoneId, vendors) {
     try {
-      const processedVendors = vendors.map(vendor => ({
+      const safeVendors = Array.isArray(vendors) ? vendors : [];
+      const processedVendors = safeVendors.map(vendor => ({
         ...vendor,
         zoneId,
         status: vendor.status || 'active',
         updatedAt: vendor.updatedAt || new Date().toISOString()
       }));
       
-      // Save to both locations
-      const success1 = this.setData(STORAGE_KEYS.zoneVendors(zoneId), processedVendors, false);
-      const success2 = this.setData(STORAGE_KEYS.adminVendors(zoneId), processedVendors, false);
+      // Cache the vendors data
+      cachingService.set(STORAGE_KEYS.zoneVendors(zoneId), processedVendors, 15 * 60 * 1000); // 15 minutes
       
-      if (success1 && success2) {
-        // Update Redux store
-        store.dispatch(setVendors(processedVendors));
-        this.clearCache(`vendor_${zoneId}`);
-        
-        logger.info('Vendors saved successfully', { zoneId, count: processedVendors.length }, 'DataAccessLayer');
-        return true;
-      }
+      // Update Redux store
+      store.dispatch(setVendors(processedVendors));
       
-      return false;
+      logger.info('Vendors cached successfully', { zoneId, count: processedVendors.length }, 'DataAccessLayer');
+      return true;
     } catch (error) {
-      logger.error('Failed to save vendors', error, 'DataAccessLayer');
+      logger.error('Failed to cache vendors', error, 'DataAccessLayer');
       return false;
     }
   }
 
   // ===== MENU OPERATIONS =====
 
-  getMenuItems({ restaurantId, shopId, zoneId }) {
+  async getMenuItems({ restaurantId, shopId, zoneId }) {
     try {
       if (restaurantId) {
-        return this.getData(STORAGE_KEYS.restaurantMenuItems(restaurantId), []);
+        return await this.getData(STORAGE_KEYS.restaurantMenuItems(restaurantId), []);
       }
-      
+
       if (shopId && zoneId) {
-        return this.getData(STORAGE_KEYS.vendorMenuItems(shopId), []);
+        return await this.getData(STORAGE_KEYS.vendorMenuItems(shopId), []);
       }
-      
+
       return [];
     } catch (error) {
       logger.error('Failed to get menu items', error, 'DataAccessLayer');
@@ -508,7 +507,7 @@ class DataAccessLayer {
     }
   }
 
-  saveMenuItems(entityId, menuItems, entityType = 'restaurant') {
+  async saveMenuItems(entityId, menuItems, entityType = 'restaurant') {
     try {
       let key;
       if (entityType === 'restaurant') {
@@ -518,12 +517,12 @@ class DataAccessLayer {
       } else {
         throw new Error(`Invalid entity type: ${entityType}`);
       }
-      
-      const success = this.setData(key, menuItems);
+
+      const success = await this.setData(key, menuItems);
       if (success) {
         logger.info('Menu items saved successfully', { entityId, entityType, count: menuItems.length }, 'DataAccessLayer');
       }
-      
+
       return success;
     } catch (error) {
       logger.error('Failed to save menu items', error, 'DataAccessLayer');

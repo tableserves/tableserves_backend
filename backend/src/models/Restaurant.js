@@ -10,15 +10,14 @@ const restaurantSchema = new Schema({
   ownerId: {
     type: Schema.Types.ObjectId,
     ref: 'User',
-    required: [true, 'Owner ID is required'],
-    index: true
+    required: [true, 'Owner ID is required']
   },
   
   // Subscription Reference
   subscriptionId: {
     type: Schema.Types.ObjectId,
     ref: 'Subscription',
-    required: [true, 'Subscription ID is required']
+    required: false // Allow creation without subscription initially
   },
   
   // Basic Information
@@ -89,14 +88,14 @@ const restaurantSchema = new Schema({
       type: String,
       required: [true, 'Phone number is required'],
       trim: true,
-      match: [/^[\\+]?[1-9][\\d]{0,15}$/, 'Please provide a valid phone number']
+      match: [/^[\+]?[1-9][\d]{0,15}$/, 'Please provide a valid phone number']
     },
-    
+
     email: {
       type: String,
       trim: true,
       lowercase: true,
-      match: [/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/, 'Please provide a valid email']
+      match: [/^[^\s@]+@[^\s@]+\.[^\s@]+$/, 'Please provide a valid email']
     },
     
     website: {
@@ -107,14 +106,16 @@ const restaurantSchema = new Schema({
   
   // Media
   media: {
-    logo: {
-      type: String // Cloudinary URL
-    },
-    
     images: [{
       url: {
         type: String,
-        required: true
+        required: true,
+        validate: {
+          validator: function(value) {
+            return value && value.trim().length > 0;
+          },
+          message: 'Image URL cannot be empty'
+        }
       },
       caption: {
         type: String,
@@ -124,6 +125,11 @@ const restaurantSchema = new Schema({
         type: Boolean,
         default: false
       },
+      imageType: {
+        type: String,
+        enum: ['logo', 'banner', 'gallery', 'menu'],
+        default: 'gallery'
+      },
       order: {
         type: Number,
         default: 0
@@ -131,7 +137,7 @@ const restaurantSchema = new Schema({
     }],
     
     banner: {
-      type: String // Cloudinary URL
+      type: String // Cloudinary URL for banner only
     }
   },
   
@@ -184,8 +190,8 @@ const restaurantSchema = new Schema({
     
     name: {
       type: String,
-      trim: true,
-      description: 'Optional table name (e.g., \"Window Table\", \"Private Booth\")'
+      trim: true
+      // Optional table name (e.g., "Window Table", "Private Booth")
     },
     
     capacity: {
@@ -198,12 +204,12 @@ const restaurantSchema = new Schema({
     qrCode: {
       data: {
         type: String,
-        required: [true, 'QR code data is required'],
-        description: 'URL that the QR code points to'
+        required: [true, 'QR code data is required']
+        // URL that the QR code points to
       },
       imageUrl: {
-        type: String,
-        description: 'Cloudinary URL of the generated QR code image'
+        type: String
+        // Cloudinary URL of the generated QR code image
       },
       customization: {
         foregroundColor: {
@@ -217,8 +223,8 @@ const restaurantSchema = new Schema({
           match: /^#[0-9A-F]{6}$/i
         },
         logo: {
-          type: String,
-          description: 'Logo to embed in QR code'
+          type: String
+          // Logo to embed in QR code
         },
         size: {
           type: Number,
@@ -231,13 +237,13 @@ const restaurantSchema = new Schema({
     location: {
       section: {
         type: String,
-        trim: true,
-        description: 'Restaurant section (e.g., \"Main Dining\", \"Patio\", \"Bar\")'
+        trim: true
+        // Restaurant section (e.g., "Main Dining", "Patio", "Bar")
       },
       coordinates: {
         x: Number,
-        y: Number,
-        description: 'Position on restaurant floor plan'
+        y: Number
+        // Position on restaurant floor plan
       }
     },
     
@@ -309,8 +315,8 @@ const restaurantSchema = new Schema({
         type: Number,
         min: [5, 'Prep time must be at least 5 minutes'],
         max: [120, 'Prep time cannot exceed 120 minutes'],
-        default: 20,
-        description: 'Estimated preparation time in minutes'
+        default: 20
+        // Estimated preparation time in minutes
       },
       
       orderNotifications: {
@@ -330,8 +336,8 @@ const restaurantSchema = new Schema({
       
       autoAcceptOrders: {
         type: Boolean,
-        default: false,
-        description: 'Automatically accept orders without manual confirmation'
+        default: false
+        // Automatically accept orders without manual confirmation
       }
     },
     
@@ -369,8 +375,8 @@ const restaurantSchema = new Schema({
       
       currency: {
         type: String,
-        enum: ['USD', 'EUR', 'GBP', 'CAD', 'AUD'],
-        default: 'USD'
+        enum: ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'PKR', 'RS'],
+        default: 'PKR'
       }
     },
     
@@ -427,14 +433,14 @@ const restaurantSchema = new Schema({
   
   isPublished: {
     type: Boolean,
-    default: false,
-    description: 'Whether the restaurant menu is published and accessible'
+    default: false
+    // Whether the restaurant menu is published and accessible
   },
   
   isFeatured: {
     type: Boolean,
-    default: false,
-    description: 'Featured restaurants (for platform showcase)'
+    default: false
+    // Featured restaurants (for platform showcase)
   },
   
   // Analytics and Statistics
@@ -488,6 +494,135 @@ const restaurantSchema = new Schema({
   updatedBy: {
     type: Schema.Types.ObjectId,
     ref: 'User'
+  },
+  
+  // Frontend Compatibility Fields
+  subscriptionPlan: {
+    type: String,
+    enum: ['free', 'basic', 'advanced', 'premium'],
+    default: 'free'
+  },
+  
+  ownerName: {
+    type: String,
+    trim: true
+  },
+  
+  ownerEmail: {
+    type: String,
+    trim: true,
+    lowercase: true
+  },
+  
+  ownerPhone: {
+    type: String,
+    trim: true
+  },
+  
+  maxTables: {
+    type: Number,
+    min: [1, 'Max tables must be at least 1']
+  },
+  
+  // Bank Details for Payment Settlements
+  bankDetails: {
+    accountHolderName: {
+      type: String,
+      trim: true
+    },
+    accountNumber: {
+      type: String,
+      trim: true,
+      validate: {
+        validator: function(v) {
+          if (!v) return true; // Allow empty
+          return /^\d{9,18}$/.test(v);
+        },
+        message: 'Account number must be 9-18 digits'
+      }
+    },
+    ifscCode: {
+      type: String,
+      trim: true,
+      uppercase: true,
+      validate: {
+        validator: function(v) {
+          if (!v) return true; // Allow empty
+          return /^[A-Z]{4}0[A-Z0-9]{6}$/.test(v);
+        },
+        message: 'Invalid IFSC code format (e.g., SBIN0001234)'
+      }
+    },
+    accountType: {
+      type: String,
+      enum: ['savings', 'current'],
+      default: 'savings'
+    }
+  },
+  
+  // Legacy payment config (kept for backward compatibility)
+  legacyPaymentConfig: {
+    upiId: {
+      type: String,
+      trim: true,
+      validate: {
+        validator: function(v) {
+          if (!v) return true; // Allow empty UPI ID
+          // UPI ID format: username@bankname or phone@upi
+          const upiRegex = /^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+$/;
+          return upiRegex.test(v);
+        },
+        message: 'Invalid UPI ID format. Use format: username@bankname or phone@upi'
+      }
+    },
+    paymentModel: {
+      type: String,
+      enum: ['direct', 'platform'],
+      default: 'direct'
+    },
+    onlinePaymentsEnabled: {
+      type: Boolean,
+      default: false
+    }
+  },
+  
+  // Razorpay Route Payment Configuration
+  paymentConfig: {
+    type: require('./subschemas/paymentConfig'),
+    default: () => ({}),
+  },
+  
+  // Address fields for frontend compatibility
+  address: {
+    type: String,
+    trim: true
+  },
+  
+  city: {
+    type: String,
+    trim: true
+  },
+  
+  state: {
+    type: String,
+    trim: true
+  },
+  
+  zipCode: {
+    type: String,
+    trim: true
+  },
+  
+  cuisine: {
+    type: String,
+    trim: true,
+    default: 'Multi-Cuisine'
+  },
+  
+  status: {
+    type: String,
+    enum: ['active', 'inactive', 'suspended'],
+    default: 'active'
   }
 }, {
   timestamps: true,
@@ -497,7 +632,6 @@ const restaurantSchema = new Schema({
 
 // Indexes for performance
 restaurantSchema.index({ ownerId: 1 });
-restaurantSchema.index({ slug: 1 }, { unique: true });
 restaurantSchema.index({ isActive: 1, isPublished: 1 });
 restaurantSchema.index({ 'contact.address.city': 1 });
 restaurantSchema.index({ 'contact.address.state': 1 });
@@ -508,6 +642,13 @@ restaurantSchema.index({ isFeatured: 1 });
 // Compound indexes
 restaurantSchema.index({ ownerId: 1, isActive: 1 });
 restaurantSchema.index({ 'contact.address.city': 1, 'contact.address.state': 1 });
+
+// Add unique compound index for owner and status to prevent multiple active restaurants per owner
+restaurantSchema.index({ ownerId: 1, status: 1 }, { 
+  unique: true,
+  partialFilterExpression: { status: { $in: ['active', 'inactive'] } },
+  name: 'unique_owner_active_restaurant'
+});
 
 // Virtual for full address
 restaurantSchema.virtual('fullAddress').get(function() {
@@ -532,9 +673,16 @@ restaurantSchema.virtual('activeTablesCount').get(function() {
   return this.tables.filter(table => table.isActive).length;
 });
 
-// Virtual for QR code URL
+// Virtual for menu URL
 restaurantSchema.virtual('menuUrl').get(function() {
   return `${process.env.FRONTEND_URL}/menu/${this.slug}`;
+});
+
+// Virtual to get logo from media.images array only
+restaurantSchema.virtual('logoUrl').get(function() {
+  // Get logo from media.images array where imageType is 'logo'
+  const logoImage = this.media?.images?.find(img => img.imageType === 'logo');
+  return logoImage ? logoImage.url : null;
 });
 
 // Instance Methods
@@ -545,13 +693,90 @@ restaurantSchema.virtual('menuUrl').get(function() {
 restaurantSchema.methods.generateSlug = function() {
   let baseSlug = this.name
     .toLowerCase()
-    .replace(/[^a-z0-9\\s-]/g, '')
-    .replace(/\\s+/g, '-')
+    .trim()
+    // Remove non-alphanumeric characters except spaces and hyphens
+    .replace(/[^a-z0-9\s-]/g, '')
+    // Replace multiple spaces with single hyphen
+    .replace(/\s+/g, '-')
+    // Replace multiple hyphens with single hyphen
     .replace(/-+/g, '-')
-    .trim('-');
+    // Remove hyphens from start and end
+    .replace(/^-+|-+$/g, '');
+  
+  // Ensure slug is not empty
+  if (!baseSlug) {
+    baseSlug = 'restaurant';
+  }
   
   // Ensure uniqueness will be handled by pre-save middleware
   return baseSlug;
+};
+
+/**
+ * Check if restaurant can accept online payments (legacy)
+ */
+restaurantSchema.methods.canAcceptOnlinePayments = function() {
+  // Check Razorpay Route first
+  if (this.paymentConfig?.isPaymentReady) {
+    return true;
+  }
+  
+  // Fallback to legacy UPI
+  const hasUpiId = !!(this.legacyPaymentConfig?.upiId && this.legacyPaymentConfig?.upiId.trim());
+  const isEnabled = this.legacyPaymentConfig?.onlinePaymentsEnabled === true;
+  return hasUpiId && isEnabled;
+};
+
+/**
+ * Get payment configuration status
+ */
+restaurantSchema.methods.getPaymentStatus = function() {
+  // Razorpay Route status
+  const razorpayStatus = {
+    isRazorpayEnabled: this.paymentConfig?.isPaymentReady || false,
+    linkedAccountId: this.paymentConfig?.linkedAccountId || null,
+    accountStatus: this.paymentConfig?.accountStatus || 'pending',
+    kycStatus: this.paymentConfig?.kycStatus || 'pending',
+    settlementsEnabled: this.paymentConfig?.settlementsEnabled || false,
+    onboardingStep: this.paymentConfig?.onboardingStep || 'details_pending',
+    onboardingProgress: this.paymentConfig?.onboardingProgress || 0,
+    commissionRate: this.paymentConfig?.commissionRate || 10,
+  };
+  
+  // Legacy UPI status
+  const hasUpiId = !!(this.legacyPaymentConfig?.upiId && this.legacyPaymentConfig?.upiId.trim());
+  const isEnabled = this.legacyPaymentConfig?.onlinePaymentsEnabled === true;
+  const canAcceptOnlinePayments = razorpayStatus.isRazorpayEnabled || (hasUpiId && isEnabled);
+
+  return {
+    ...razorpayStatus,
+    hasUpiId,
+    isOnlinePaymentsEnabled: isEnabled,
+    canAcceptOnlinePayments,
+    upiId: hasUpiId ? this.legacyPaymentConfig.upiId : null,
+    paymentModel: this.legacyPaymentConfig?.paymentModel || 'platform',
+    paymentMethod: razorpayStatus.isRazorpayEnabled ? 'razorpay_route' : (hasUpiId ? 'upi' : 'none'),
+  };
+};
+
+/**
+ * Check if Razorpay Route is configured and active
+ */
+restaurantSchema.methods.isRazorpayRouteActive = function() {
+  return this.paymentConfig?.isPaymentReady || false;
+};
+
+/**
+ * Get commission rate based on subscription plan
+ */
+restaurantSchema.methods.getCommissionRate = function() {
+  if (this.paymentConfig?.commissionRate) {
+    return this.paymentConfig.commissionRate;
+  }
+  
+  // Fallback to plan-based commission
+  const { getCommissionRate } = require('../utils/commissionConfig');
+  return getCommissionRate(this.subscriptionPlan);
 };
 
 /**
@@ -688,45 +913,156 @@ restaurantSchema.statics.getStatistics = function() {
   ]);
 };
 
+// Pre-validation middleware to check for duplicate restaurants per owner
+restaurantSchema.pre('validate', async function(next) {
+  try {
+    // Only check for duplicates on new documents or when ownerId is modified
+    if (this.isNew || this.isModified('ownerId')) {
+      // Check if the owner already has an active or inactive restaurant
+      const existingRestaurant = await this.constructor.findOne({
+        ownerId: this.ownerId,
+        status: { $in: ['active', 'inactive'] },
+        _id: { $ne: this._id }
+      });
+      
+      if (existingRestaurant) {
+        const error = new Error(`Owner already has a restaurant: ${existingRestaurant.name}`);
+        error.code = 'DUPLICATE_RESTAURANT';
+        return next(error);
+      }
+    }
+    
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Pre-save middleware
 restaurantSchema.pre('save', async function(next) {
-  // Generate slug if not provided or if name changed
-  if (this.isNew || this.isModified('name')) {
-    if (!this.slug) {
-      let baseSlug = this.generateSlug();
-      let slug = baseSlug;
-      let counter = 1;
-      
-      // Check for uniqueness
-      while (await this.constructor.findOne({ slug, _id: { $ne: this._id } })) {
-        slug = `${baseSlug}-${counter}`;
-        counter++;
+  try {
+    // Generate slug if not provided or if name changed
+    if (this.isNew || this.isModified('name')) {
+      if (!this.slug) {
+        let baseSlug = this.generateSlug();
+        let slug = baseSlug;
+        let counter = 1;
+        
+        // Check for uniqueness with a more robust approach
+        while (await this.constructor.findOne({ slug, _id: { $ne: this._id } })) {
+          slug = `${baseSlug}-${counter}`;
+          counter++;
+          
+          // Prevent infinite loops in case of issues
+          if (counter > 1000) {
+            // Fallback to timestamp-based slug
+            const timestamp = Date.now().toString(36);
+            slug = `${baseSlug}-${timestamp}`;
+            break;
+          }
+        }
+        
+        this.slug = slug;
       }
-      
-      this.slug = slug;
     }
-  }
-  
-  // Ensure at least one table exists
-  if (this.isNew && this.tables.length === 0) {
-    const qrData = `${process.env.FRONTEND_URL}/order/${this.slug}?table=1`;
-    this.tables.push({
-      number: '1',
-      capacity: 4,
-      qrCode: {
-        data: qrData
+    
+    // Initialize media structure if needed
+    if (this.isNew && (!this.media || !this.media.images)) {
+      if (!this.media) {
+        this.media = { images: [] };
       }
-    });
+      if (!this.media.images) {
+        this.media.images = [];
+      }
+    }
+    
+    // Auto-sync subscription plan with actual subscription data
+    if (this.subscriptionId && (this.isNew || this.isModified('subscriptionId'))) {
+      try {
+        const Subscription = require('./Subscription');
+        const subscription = await Subscription.findById(this.subscriptionId);
+        
+        if (subscription && subscription.planKey) {
+          let subscriptionPlan = 'free'; // default
+          
+          // Map subscription planKey to restaurant subscriptionPlan
+          switch (subscription.planKey) {
+            case 'restaurant_enterprise':
+            case 'restaurant_premium':
+              subscriptionPlan = 'premium';
+              break;
+            case 'restaurant_professional':
+            case 'restaurant_advanced':
+              subscriptionPlan = 'advanced';
+              break;
+            case 'restaurant_starter':
+            case 'restaurant_basic':
+              subscriptionPlan = 'basic';
+              break;
+            case 'restaurant_free':
+            case 'free_plan':
+            default:
+              subscriptionPlan = 'free';
+              break;
+          }
+          
+          // Only update if it's different to prevent unnecessary saves
+          if (this.subscriptionPlan !== subscriptionPlan) {
+            this.subscriptionPlan = subscriptionPlan;
+            
+            console.log('🔄 Auto-syncing subscription plan:', {
+              restaurantId: this._id,
+              subscriptionPlanKey: subscription.planKey,
+              mappedSubscriptionPlan: subscriptionPlan
+            });
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to sync subscription plan:', error.message);
+        // Don't fail the save operation for sync errors
+      }
+    }
+    
+    // Sync ownerName with user profile name if not set or if ownerId changed
+    if (this.isNew || this.isModified('ownerId') || !this.ownerName) {
+      try {
+        const User = require('./User');
+        const owner = await User.findById(this.ownerId);
+        if (owner && owner.profile?.name) {
+          this.ownerName = owner.profile.name;
+        } else if (owner && owner.username) {
+          this.ownerName = owner.username;
+        }
+      } catch (error) {
+        console.warn('Failed to sync owner name from user profile:', error.message);
+      }
+    }
+    
+    // Ensure at least one table exists
+    if (this.isNew && this.tables.length === 0) {
+      // Use a temporary slug for QR generation if slug is not yet set
+      const slugForQR = this.slug || this.generateSlug();
+      const qrData = `${process.env.FRONTEND_URL}/order/${slugForQR}?table=1`;
+      this.tables.push({
+        number: '1',
+        capacity: 4,
+        qrCode: {
+          data: qrData
+        }
+      });
+    }
+    
+    // Update QR codes if slug changed
+    if (this.isModified('slug')) {
+      this.tables.forEach(table => {
+        table.qrCode.data = `${process.env.FRONTEND_URL}/order/${this.slug}?table=${table.number}`;
+      });
+    }
+    
+    next();
+  } catch (error) {
+    next(error);
   }
-  
-  // Update QR codes if slug changed
-  if (this.isModified('slug')) {
-    this.tables.forEach(table => {
-      table.qrCode.data = `${process.env.FRONTEND_URL}/order/${this.slug}?table=${table.number}`;
-    });
-  }
-  
-  next();
 });
 
 // Create and export model

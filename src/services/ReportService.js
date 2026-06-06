@@ -3,10 +3,10 @@ import DataService from './DataService';
 
 class ReportService {
   // Generate comprehensive reports with real data
-  static generateReport(reportType, dateRange, format) {
-    const reportData = this.getReportData(reportType, dateRange);
+  static async generateReport(reportType, dateRange, format) {
+    const reportData = await this.getReportData(reportType, dateRange);
     const reportContent = this.formatReportContent(reportData, reportType, format);
-    
+
     return {
       data: reportData,
       content: reportContent,
@@ -16,8 +16,8 @@ class ReportService {
   }
 
   // Get real data for different report types
-  static getReportData(reportType, dateRange) {
-    const restaurants = LocalStorageService.getRestaurants();
+  static async getReportData(reportType, dateRange) {
+    const restaurants = await LocalStorageService.getRestaurants();
     const zones = LocalStorageService.getZones();
     const dateFilter = this.getDateFilter(dateRange);
 
@@ -41,34 +41,37 @@ class ReportService {
 
   // Revenue Report with real data
   static generateRevenueReport(restaurants, zones, dateFilter) {
-    const totalRevenue = this.calculateTotalRevenue(restaurants, zones);
-    const restaurantRevenue = restaurants.map(r => ({
-      id: r.id,
-      name: r.name,
-      revenue: r.revenue || 0,
-      orders: r.orders || 0,
-      avgOrderValue: r.revenue && r.orders ? (r.revenue / r.orders).toFixed(2) : 0,
-      status: r.status,
-      subscriptionPlan: r.subscriptionPlan
+    const restaurantsArray = Array.isArray(restaurants) ? restaurants : [];
+    const zonesArray = Array.isArray(zones) ? zones : [];
+
+    const totalRevenue = this.calculateTotalRevenue(restaurantsArray, zonesArray);
+    const restaurantRevenue = restaurantsArray.map(r => ({
+      id: r?.id || 'unknown',
+      name: r?.name || 'Unknown Restaurant',
+      revenue: r?.revenue || 0,
+      orders: r?.orders || 0,
+      avgOrderValue: r?.revenue && r?.orders ? (r.revenue / r.orders).toFixed(2) : 0,
+      status: r?.status || 'unknown',
+      subscriptionPlan: r?.subscriptionPlan || 'unknown'
     }));
 
-    const zoneRevenue = zones.map(z => ({
-      id: z.id,
-      name: z.name,
-      revenue: z.totalRevenue || 0,
-      commission: z.commissionEarned || 0,
-      shops: z.shops?.length || 0,
+    const zoneRevenue = zonesArray.map(z => ({
+      id: z?.id || 'unknown',
+      name: z?.name || 'Unknown Zone',
+      revenue: z?.totalRevenue || 0,
+      commission: z?.commissionEarned || 0,
+      shops: z?.shops?.length || 0,
       status: z.status
     }));
 
     return {
       summary: {
         totalRevenue,
-        totalRestaurants: restaurants.length,
-        totalZones: zones.length,
-        activeRestaurants: restaurants.filter(r => r.status === 'active').length,
-        activeZones: zones.filter(z => z.status === 'active').length,
-        averageRevenuePerRestaurant: restaurants.length > 0 ? (totalRevenue / restaurants.length).toFixed(2) : 0
+        totalRestaurants: restaurantsArray.length,
+        totalZones: zonesArray.length,
+        activeRestaurants: restaurantsArray.filter(r => r && r.status === 'active').length,
+        activeZones: zonesArray.filter(z => z && z.status === 'active').length,
+        averageRevenuePerRestaurant: restaurantsArray.length > 0 ? (totalRevenue / restaurantsArray.length).toFixed(2) : 0
       },
       restaurantBreakdown: restaurantRevenue,
       zoneBreakdown: zoneRevenue,
@@ -80,7 +83,7 @@ class ReportService {
   // Orders Report with real data
   static generateOrdersReport(restaurants, zones, dateFilter) {
     const totalOrders = this.calculateTotalOrders(restaurants, zones);
-    
+
     // Get order data from localStorage
     const allOrders = [];
     restaurants.forEach(r => {
@@ -129,7 +132,7 @@ class ReportService {
   static generateCustomersReport(restaurants, zones, dateFilter) {
     // Generate customer data from orders
     const customerData = this.extractCustomerDataFromOrders(restaurants, zones);
-    
+
     return {
       summary: {
         totalCustomers: customerData.length,
@@ -200,7 +203,7 @@ class ReportService {
   // Platform Analytics Report
   static generatePlatformAnalyticsReport(restaurants, zones, dateFilter) {
     const stats = DataService.getSuperAdminStats();
-    
+
     return {
       platformOverview: {
         totalRestaurants: stats.totalRestaurants,
@@ -219,14 +222,36 @@ class ReportService {
 
   // Helper methods for calculations
   static calculateTotalRevenue(restaurants, zones) {
-    const restaurantRevenue = restaurants.reduce((sum, r) => sum + (parseFloat(r.revenue) || 0), 0);
-    const zoneRevenue = zones.reduce((sum, z) => sum + (parseFloat(z.totalRevenue) || 0), 0);
+    const restaurantsArray = Array.isArray(restaurants) ? restaurants : [];
+    const zonesArray = Array.isArray(zones) ? zones : [];
+
+    const restaurantRevenue = restaurantsArray.reduce((sum, r) => {
+      if (!r) return sum;
+      return sum + (parseFloat(r.revenue) || 0);
+    }, 0);
+
+    const zoneRevenue = zonesArray.reduce((sum, z) => {
+      if (!z) return sum;
+      return sum + (parseFloat(z.totalRevenue) || 0);
+    }, 0);
+
     return restaurantRevenue + zoneRevenue;
   }
 
   static calculateTotalOrders(restaurants, zones) {
-    const restaurantOrders = restaurants.reduce((sum, r) => sum + (r.orders || 0), 0);
-    const zoneOrders = zones.reduce((sum, z) => sum + (z.totalOrders || 0), 0);
+    const restaurantsArray = Array.isArray(restaurants) ? restaurants : [];
+    const zonesArray = Array.isArray(zones) ? zones : [];
+
+    const restaurantOrders = restaurantsArray.reduce((sum, r) => {
+      if (!r) return sum;
+      return sum + (r.orders || 0);
+    }, 0);
+
+    const zoneOrders = zonesArray.reduce((sum, z) => {
+      if (!z) return sum;
+      return sum + (z.totalOrders || 0);
+    }, 0);
+
     return restaurantOrders + zoneOrders;
   }
 
@@ -289,16 +314,24 @@ class ReportService {
   }
 
   static filterOrdersByDate(orders, dateFilter) {
-    return orders.filter(order => {
+    const ordersArray = Array.isArray(orders) ? orders : [];
+    return ordersArray.filter(order => {
+      if (!order) return false;
       const orderDate = new Date(order.orderTime || order.timestamp || order.createdAt);
       return orderDate >= dateFilter;
     });
   }
 
   static calculateAverageOrderValue(orders) {
-    if (orders.length === 0) return 0;
-    const totalValue = orders.reduce((sum, order) => sum + (order.total || order.grandTotal || 0), 0);
-    return (totalValue / orders.length).toFixed(2);
+    const ordersArray = Array.isArray(orders) ? orders : [];
+    if (ordersArray.length === 0) return 0;
+
+    const totalValue = ordersArray.reduce((sum, order) => {
+      if (!order) return sum;
+      return sum + (order.total || order.grandTotal || 0);
+    }, 0);
+
+    return (totalValue / ordersArray.length).toFixed(2);
   }
 
   static groupOrdersByStatus(orders) {
@@ -338,7 +371,7 @@ class ReportService {
     const dailyData = {};
     orders.forEach(order => {
       const orderDate = new Date(order.orderTime || order.timestamp || order.createdAt);
-      const dateKey = orderDate.toISOString().split('T')[0];
+      const dateKey = orderDate.toLocaleDateString('en-CA');
       dailyData[dateKey] = (dailyData[dateKey] || 0) + 1;
     });
 

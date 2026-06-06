@@ -12,40 +12,53 @@ export const menuApi = api.injectEndpoints({
 
     // Get menu categories for restaurant
     getMenuCategories: builder.query({
-      query: ({ restaurantId, zoneId }) => {
-        const endpoint = restaurantId 
-          ? `/restaurants/${restaurantId}/menu/categories`
-          : `/zones/${zoneId}/menu/categories`;
-        
-        return {
-          endpoint,
-          method: 'GET',
-        };
+      query: ({ restaurantId, zoneId, shopId, vendorId, isPublic = true }) => {
+        let url;
+        if (restaurantId) {
+          url = isPublic 
+            ? `/menus/public/restaurant/${restaurantId}/categories`
+            : `/menus/restaurant/${restaurantId}/categories`;
+        } else if (zoneId) {
+          url = `/menus/zone/${zoneId}/categories`;
+        } else if (shopId) {
+          url = `/menus/shop/${shopId}/categories`;
+        } else if (vendorId) {
+          url = `/menus/shop/${vendorId}/categories`;
+        }
+
+        return url;
       },
-      providesTags: (result, error, { restaurantId, zoneId }) => [
-        { type: 'MenuCategory', id: restaurantId || zoneId },
+      providesTags: (result, error, { restaurantId, zoneId, shopId, vendorId }) => [
+        { type: 'MenuCategory', id: restaurantId || zoneId || shopId || vendorId },
         'MenuCategory',
       ],
       transformResponse: (response) => {
-        return response.data || [];
+        return response.data || response || [];
       },
     }),
 
     // Create menu category
     createMenuCategory: builder.mutation({
-      query: ({ restaurantId, zoneId, categoryData }) => {
-        const endpoint = restaurantId 
-          ? `/restaurants/${restaurantId}/menu/categories`
-          : `/zones/${zoneId}/menu/categories`;
-        
+      query: ({ restaurantId, zoneId, shopId, vendorId, categoryData }) => {
+        let url;
+        if (restaurantId) {
+          url = `/menus/restaurant/${restaurantId}/categories`;
+        } else if (zoneId) {
+          url = `/menus/zone/${zoneId}/categories`;
+        } else if (shopId) {
+          url = `/menus/shop/${shopId}/categories`;
+        } else if (vendorId) {
+          url = `/menus/shop/${vendorId}/categories`;
+        }
+
         return {
-          endpoint,
+          url,
           method: 'POST',
-          data: categoryData,
+          body: categoryData,
         };
       },
-      invalidatesTags: (result, error, { restaurantId, zoneId }) => [
-        { type: 'MenuCategory', id: restaurantId || zoneId },
+      invalidatesTags: (result, error, { restaurantId, zoneId, shopId, vendorId }) => [
+        { type: 'MenuCategory', id: restaurantId || zoneId || shopId || vendorId },
         'MenuCategory',
       ],
       transformResponse: (response) => {
@@ -55,20 +68,27 @@ export const menuApi = api.injectEndpoints({
 
     // Update menu category
     updateMenuCategory: builder.mutation({
-      query: ({ restaurantId, zoneId, categoryId, categoryData }) => {
-        const endpoint = restaurantId 
-          ? `/restaurants/${restaurantId}/menu/categories/${categoryId}`
-          : `/zones/${zoneId}/menu/categories/${categoryId}`;
+      query: ({ restaurantId, zoneId, shopId, vendorId, categoryId, categoryData }) => {
+        let url;
+        if (restaurantId) {
+          url = `/menus/restaurant/${restaurantId}/categories/${categoryId}`;
+        } else if (zoneId) {
+          url = `/menus/zone/${zoneId}/categories/${categoryId}`;
+        } else if (shopId) {
+          url = `/menus/shop/${shopId}/categories/${categoryId}`;
+        } else if (vendorId) {
+          url = `/menus/shop/${vendorId}/categories/${categoryId}`;
+        }
         
         return {
-          endpoint,
+          url,
           method: 'PUT',
-          data: categoryData,
+          body: categoryData,
         };
       },
-      invalidatesTags: (result, error, { restaurantId, zoneId, categoryId }) => [
+      invalidatesTags: (result, error, { restaurantId, zoneId, shopId, vendorId, categoryId }) => [
         { type: 'MenuCategory', id: categoryId },
-        { type: 'MenuCategory', id: restaurantId || zoneId },
+        { type: 'MenuCategory', id: restaurantId || zoneId || shopId || vendorId },
         'MenuCategory',
       ],
       transformResponse: (response) => {
@@ -78,18 +98,25 @@ export const menuApi = api.injectEndpoints({
 
     // Delete menu category
     deleteMenuCategory: builder.mutation({
-      query: ({ restaurantId, zoneId, categoryId }) => {
-        const endpoint = restaurantId 
-          ? `/restaurants/${restaurantId}/menu/categories/${categoryId}`
-          : `/zones/${zoneId}/menu/categories/${categoryId}`;
+      query: ({ restaurantId, zoneId, shopId, vendorId, categoryId }) => {
+        let url;
+        if (restaurantId) {
+          url = `/menus/restaurant/${restaurantId}/categories/${categoryId}`;
+        } else if (zoneId) {
+          url = `/menus/zone/${zoneId}/categories/${categoryId}`;
+        } else if (shopId) {
+          url = `/menus/shop/${shopId}/categories/${categoryId}`;
+        } else if (vendorId) {
+          url = `/menus/shop/${vendorId}/categories/${categoryId}`;
+        }
         
         return {
-          endpoint,
+          url,
           method: 'DELETE',
         };
       },
-      invalidatesTags: (result, error, { restaurantId, zoneId }) => [
-        { type: 'MenuCategory', id: restaurantId || zoneId },
+      invalidatesTags: (result, error, { restaurantId, zoneId, shopId, vendorId }) => [
+        { type: 'MenuCategory', id: restaurantId || zoneId || shopId || vendorId },
         'MenuCategory',
         'MenuItem', // Categories affect items
       ],
@@ -102,52 +129,58 @@ export const menuApi = api.injectEndpoints({
 
     // Get menu items
     getMenuItems: builder.query({
-      query: ({ restaurantId, zoneId, vendorId, categoryId }) => {
-        let endpoint;
-        
+      query: ({ restaurantId, zoneId, vendorId, shopId, categoryId, page = 1, limit = 10, search = '', isPublic = true }) => {
+        let url;
+
         if (restaurantId) {
-          endpoint = `/restaurants/${restaurantId}/menu/items`;
-        } else if (vendorId) {
-          endpoint = `/vendors/${vendorId}/menu/items`;
+          url = isPublic 
+            ? `/menus/public/restaurant/${restaurantId}/items` 
+            : `/menus/restaurant/${restaurantId}/items`;
         } else if (zoneId) {
-          endpoint = `/zones/${zoneId}/menu/items`;
+          url = `/menus/zone/${zoneId}/items`;
+        } else if (shopId) {
+          url = `/menus/shop/${shopId}/items`;
+        } else if (vendorId) {
+          url = `/menus/shop/${vendorId}/items`; // vendors are shops in the backend
         }
-        
-        if (categoryId) {
-          endpoint += `?categoryId=${categoryId}`;
-        }
-        
-        return {
-          endpoint,
-          method: 'GET',
-        };
+
+        const params = new URLSearchParams({
+          page: page.toString(),
+          limit: limit.toString(),
+          ...(search && { search }),
+          ...(categoryId && { categoryId })
+        });
+
+        return `${url}?${params}`;
       },
       providesTags: (result, error, { restaurantId, zoneId, vendorId }) => [
         { type: 'MenuItem', id: restaurantId || zoneId || vendorId },
         'MenuItem',
       ],
       transformResponse: (response) => {
-        return response.data || [];
+        return response.data || response || [];
       },
     }),
 
     // Create menu item
     createMenuItem: builder.mutation({
-      query: ({ restaurantId, zoneId, vendorId, categoryId, itemData }) => {
-        let endpoint;
-        
-        if (restaurantId && categoryId) {
-          endpoint = `/restaurants/${restaurantId}/categories/${categoryId}/items`;
-        } else if (vendorId) {
-          endpoint = `/vendors/${vendorId}/menu/items`;
+      query: ({ restaurantId, zoneId, vendorId, shopId, itemData }) => {
+        let url;
+
+        if (restaurantId) {
+          url = `/menus/restaurant/${restaurantId}/items`;
         } else if (zoneId) {
-          endpoint = `/zones/${zoneId}/menu/items`;
+          url = `/menus/zone/${zoneId}/items`;
+        } else if (shopId) {
+          url = `/menus/shop/${shopId}/items`;
+        } else if (vendorId) {
+          url = `/menus/shop/${vendorId}/items`; // vendors are shops in the backend
         }
-        
+
         return {
-          endpoint,
+          url,
           method: 'POST',
-          data: itemData,
+          body: itemData,
         };
       },
       invalidatesTags: (result, error, { restaurantId, zoneId, vendorId }) => [
@@ -161,26 +194,28 @@ export const menuApi = api.injectEndpoints({
 
     // Update menu item
     updateMenuItem: builder.mutation({
-      query: ({ restaurantId, zoneId, vendorId, itemId, itemData }) => {
-        let endpoint;
-        
+      query: ({ restaurantId, zoneId, vendorId, shopId, itemId, itemData }) => {
+        let url;
+
         if (restaurantId) {
-          endpoint = `/restaurants/${restaurantId}/items/${itemId}`;
-        } else if (vendorId) {
-          endpoint = `/vendors/${vendorId}/items/${itemId}`;
+          url = `/menus/restaurant/${restaurantId}/items/${itemId}`;
         } else if (zoneId) {
-          endpoint = `/zones/${zoneId}/items/${itemId}`;
+          url = `/menus/zone/${zoneId}/items/${itemId}`;
+        } else if (shopId) {
+          url = `/menus/shop/${shopId}/items/${itemId}`;
+        } else if (vendorId) {
+          url = `/menus/shop/${vendorId}/items/${itemId}`;
         }
-        
+
         return {
-          endpoint,
+          url,
           method: 'PUT',
-          data: itemData,
+          body: itemData,
         };
       },
-      invalidatesTags: (result, error, { restaurantId, zoneId, vendorId, itemId }) => [
+      invalidatesTags: (result, error, { restaurantId, zoneId, vendorId, shopId, itemId }) => [
         { type: 'MenuItem', id: itemId },
-        { type: 'MenuItem', id: restaurantId || zoneId || vendorId },
+        { type: 'MenuItem', id: restaurantId || zoneId || vendorId || shopId },
         'MenuItem',
       ],
       transformResponse: (response) => {
@@ -190,24 +225,27 @@ export const menuApi = api.injectEndpoints({
 
     // Delete menu item
     deleteMenuItem: builder.mutation({
-      query: ({ restaurantId, zoneId, vendorId, itemId }) => {
-        let endpoint;
-        
+      query: ({ restaurantId, zoneId, vendorId, shopId, itemId }) => {
+        let url;
+
         if (restaurantId) {
-          endpoint = `/restaurants/${restaurantId}/items/${itemId}`;
-        } else if (vendorId) {
-          endpoint = `/vendors/${vendorId}/items/${itemId}`;
+          url = `/menus/restaurant/${restaurantId}/items/${itemId}`;
         } else if (zoneId) {
-          endpoint = `/zones/${zoneId}/items/${itemId}`;
+          url = `/menus/zone/${zoneId}/items/${itemId}`;
+        } else if (shopId) {
+          url = `/menus/shop/${shopId}/items/${itemId}`;
+        } else if (vendorId) {
+          url = `/menus/shop/${vendorId}/items/${itemId}`;
         }
-        
+
         return {
-          endpoint,
+          url,
           method: 'DELETE',
         };
       },
-      invalidatesTags: (result, error, { restaurantId, zoneId, vendorId }) => [
-        { type: 'MenuItem', id: restaurantId || zoneId || vendorId },
+      invalidatesTags: (result, error, { restaurantId, zoneId, vendorId, shopId, itemId }) => [
+        { type: 'MenuItem', id: itemId },
+        { type: 'MenuItem', id: restaurantId || zoneId || vendorId || shopId },
         'MenuItem',
       ],
       transformResponse: (response) => {
@@ -219,52 +257,67 @@ export const menuApi = api.injectEndpoints({
 
     // Get menu modifiers
     getMenuModifiers: builder.query({
-      query: ({ restaurantId, zoneId, vendorId }) => {
-        let endpoint;
+      query: ({ restaurantId, zoneId, vendorId, shopId, isPublic = false }) => {
+        let url;
         
-        if (restaurantId) {
-          endpoint = `/restaurants/${restaurantId}/menu/modifiers`;
-        } else if (vendorId) {
-          endpoint = `/vendors/${vendorId}/menu/modifiers`;
-        } else if (zoneId) {
-          endpoint = `/zones/${zoneId}/menu/modifiers`;
+        if (isPublic) {
+          // Use public endpoints for unauthenticated access
+          if (restaurantId) {
+            url = `/menus/public/restaurant/${restaurantId}/modifiers`;
+          } else if (vendorId) {
+            url = `/menus/public/shop/${vendorId}/modifiers`;
+          } else if (shopId) {
+            url = `/menus/public/shop/${shopId}/modifiers`;
+          } else if (zoneId) {
+            url = `/menus/public/zone/${zoneId}/modifiers`;
+          }
+        } else {
+          // Use authenticated endpoints
+          if (restaurantId) {
+            url = `/menus/restaurant/${restaurantId}/modifiers`;
+          } else if (vendorId) {
+            url = `/menus/shop/${vendorId}/modifiers`;
+          } else if (shopId) {
+            url = `/menus/shop/${shopId}/modifiers`;
+          } else if (zoneId) {
+            url = `/menus/zone/${zoneId}/modifiers`;
+          }
         }
         
-        return {
-          endpoint,
-          method: 'GET',
-        };
+        return url;
       },
-      providesTags: (result, error, { restaurantId, zoneId, vendorId }) => [
-        { type: 'MenuModifier', id: restaurantId || zoneId || vendorId },
+      providesTags: (result, error, { restaurantId, zoneId, vendorId, shopId }) => [
+        { type: 'MenuModifier', id: restaurantId || zoneId || vendorId || shopId },
         'MenuModifier',
       ],
       transformResponse: (response) => {
-        return response.data || [];
+        return response.data || response || [];
       },
     }),
 
     // Create menu modifier
     createMenuModifier: builder.mutation({
-      query: ({ restaurantId, zoneId, vendorId, modifierData }) => {
-        let endpoint;
+      query: ({ restaurantId, zoneId, vendorId, shopId, modifierData }) => {
+        let url;
         
         if (restaurantId) {
-          endpoint = `/restaurants/${restaurantId}/menu/modifiers`;
+          url = `/menus/restaurant/${restaurantId}/modifiers`;
         } else if (vendorId) {
-          endpoint = `/vendors/${vendorId}/menu/modifiers`;
+          url = `/menus/shop/${vendorId}/modifiers`;
+        } else if (shopId) {
+          url = `/menus/shop/${shopId}/modifiers`;
         } else if (zoneId) {
-          endpoint = `/zones/${zoneId}/menu/modifiers`;
+          url = `/menus/zone/${zoneId}/modifiers`;
         }
         
         return {
-          endpoint,
+          url,
           method: 'POST',
-          data: modifierData,
+          body: modifierData,
         };
       },
-      invalidatesTags: (result, error, { restaurantId, zoneId, vendorId }) => [
-        { type: 'MenuModifier', id: restaurantId || zoneId || vendorId },
+      invalidatesTags: (result, error, { restaurantId, zoneId, vendorId, shopId }) => [
+        { type: 'MenuModifier', id: restaurantId || zoneId || vendorId || shopId },
         'MenuModifier',
       ],
       transformResponse: (response) => {
@@ -274,26 +327,28 @@ export const menuApi = api.injectEndpoints({
 
     // Update menu modifier
     updateMenuModifier: builder.mutation({
-      query: ({ restaurantId, zoneId, vendorId, modifierId, modifierData }) => {
-        let endpoint;
+      query: ({ restaurantId, zoneId, vendorId, shopId, modifierId, modifierData }) => {
+        let url;
         
         if (restaurantId) {
-          endpoint = `/restaurants/${restaurantId}/menu/modifiers/${modifierId}`;
+          url = `/menus/restaurant/${restaurantId}/modifiers/${modifierId}`;
         } else if (vendorId) {
-          endpoint = `/vendors/${vendorId}/menu/modifiers/${modifierId}`;
+          url = `/menus/shop/${vendorId}/modifiers/${modifierId}`;
+        } else if (shopId) {
+          url = `/menus/shop/${shopId}/modifiers/${modifierId}`;
         } else if (zoneId) {
-          endpoint = `/zones/${zoneId}/menu/modifiers/${modifierId}`;
+          url = `/menus/zone/${zoneId}/modifiers/${modifierId}`;
         }
         
         return {
-          endpoint,
+          url,
           method: 'PUT',
-          data: modifierData,
+          body: modifierData,
         };
       },
-      invalidatesTags: (result, error, { restaurantId, zoneId, vendorId, modifierId }) => [
+      invalidatesTags: (result, error, { restaurantId, zoneId, vendorId, shopId, modifierId }) => [
         { type: 'MenuModifier', id: modifierId },
-        { type: 'MenuModifier', id: restaurantId || zoneId || vendorId },
+        { type: 'MenuModifier', id: restaurantId || zoneId || vendorId || shopId },
         'MenuModifier',
       ],
       transformResponse: (response) => {
@@ -303,24 +358,26 @@ export const menuApi = api.injectEndpoints({
 
     // Delete menu modifier
     deleteMenuModifier: builder.mutation({
-      query: ({ restaurantId, zoneId, vendorId, modifierId }) => {
-        let endpoint;
+      query: ({ restaurantId, zoneId, vendorId, shopId, modifierId }) => {
+        let url;
         
         if (restaurantId) {
-          endpoint = `/restaurants/${restaurantId}/menu/modifiers/${modifierId}`;
+          url = `/menus/restaurant/${restaurantId}/modifiers/${modifierId}`;
         } else if (vendorId) {
-          endpoint = `/vendors/${vendorId}/menu/modifiers/${modifierId}`;
+          url = `/menus/shop/${vendorId}/modifiers/${modifierId}`;
+        } else if (shopId) {
+          url = `/menus/shop/${shopId}/modifiers/${modifierId}`;
         } else if (zoneId) {
-          endpoint = `/zones/${zoneId}/menu/modifiers/${modifierId}`;
+          url = `/menus/zone/${zoneId}/modifiers/${modifierId}`;
         }
         
         return {
-          endpoint,
+          url,
           method: 'DELETE',
         };
       },
-      invalidatesTags: (result, error, { restaurantId, zoneId, vendorId }) => [
-        { type: 'MenuModifier', id: restaurantId || zoneId || vendorId },
+      invalidatesTags: (result, error, { restaurantId, zoneId, vendorId, shopId }) => [
+        { type: 'MenuModifier', id: restaurantId || zoneId || vendorId || shopId },
         'MenuModifier',
       ],
       transformResponse: (response) => {
@@ -333,20 +390,20 @@ export const menuApi = api.injectEndpoints({
     // Bulk update menu items
     bulkUpdateMenuItems: builder.mutation({
       query: ({ restaurantId, zoneId, vendorId, updates }) => {
-        let endpoint;
+        let url;
         
         if (restaurantId) {
-          endpoint = `/restaurants/${restaurantId}/menu/items/bulk-update`;
+          url = `/restaurants/${restaurantId}/menus/items/bulk-update`;
         } else if (vendorId) {
-          endpoint = `/vendors/${vendorId}/menu/items/bulk-update`;
+          url = `/vendors/${vendorId}/menus/items/bulk-update`;
         } else if (zoneId) {
-          endpoint = `/zones/${zoneId}/menu/items/bulk-update`;
+          url = `/zones/${zoneId}/menus/items/bulk-update`;
         }
         
         return {
-          endpoint,
+          url,
           method: 'PUT',
-          data: { updates },
+          body: { updates },
         };
       },
       invalidatesTags: (result, error, { restaurantId, zoneId, vendorId }) => [

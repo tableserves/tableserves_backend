@@ -1,4 +1,9 @@
-import LocalStorageService from './LocalStorageService';
+import LocalStorageService from '../shared/storage/LocalStorageService';
+import simpleTokenService from '../shared/auth/SimpleTokenService';
+import { logger } from '../shared/logging/logger';
+
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 class OTPService {
   // Generate and send OTP (simulated)
@@ -31,6 +36,85 @@ class OTPService {
       return {
         success: false,
         message: 'Failed to send OTP'
+      };
+    }
+  }
+
+
+  // Send Email OTP (new method)
+  static async sendEmailOTP(email, purpose = 'verification') {
+    try {
+      logger.info('Sending email OTP via API', { email, purpose });
+
+      const response = await fetch(`${API_BASE_URL}/auth/send-email-otp`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          // Include authorization header for profile updates
+          ...(purpose === 'profile_update' && {
+            'Authorization': `Bearer ${simpleTokenService.getAccessToken()}`
+          })
+        },
+        body: JSON.stringify({
+          email: email,
+          purpose: purpose
+        })
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.message || 'Failed to send email OTP');
+      }
+
+      return {
+        success: result.success,
+        message: result.message,
+        sessionId: `email_${Date.now()}`, // Create a session ID for consistency
+        developmentOTP: result.data?.developmentOTP // For development
+      };
+    } catch (error) {
+      logger.error('Error sending email OTP:', error);
+      return {
+        success: false,
+        message: error.message || 'Failed to send email OTP'
+      };
+    }
+  }
+
+  // Verify Email OTP (new method)
+  static async verifyEmailOTP(email, otp, purpose = 'verification') {
+    try {
+      logger.info('Verifying email OTP via API', { email, purpose });
+
+      const response = await fetch(`${API_BASE_URL}/auth/verify-email-otp`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          email: email,
+          otp: otp,
+          purpose: purpose
+        })
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.message || 'Failed to verify email OTP');
+      }
+
+      return {
+        success: result.success,
+        message: result.message,
+        verified: result.data?.verified || false
+      };
+    } catch (error) {
+      logger.error('Error verifying email OTP:', error);
+      return {
+        success: false,
+        message: error.message || 'Failed to verify email OTP'
       };
     }
   }
@@ -101,7 +185,7 @@ class OTPService {
       // US format with country code: +1 (123) 456-7890
       return `+1 (${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7)}`;
     } else if (digits.length === 12 && digits.startsWith('91')) {
-      // Indian format: +91 12345 67890
+      // Indian format: +91 79040 21564
       return `+91 ${digits.slice(2, 7)} ${digits.slice(7)}`;
     } else {
       // Default format

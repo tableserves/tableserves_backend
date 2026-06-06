@@ -1,179 +1,165 @@
 /**
  * RTK Query API Configuration for TableServe Application
  * 
- * This file sets up the base API configuration using RTK Query for better data fetching,
- * caching, and synchronization. It works with the existing mock API structure but can
- * easily transition to real backend APIs.
+ * This file sets up the base API configuration using RTK Query for real-time data fetching,
+ * caching, and synchronization with the backend database.
  */
 
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
-import { authAPI, restaurantAPI, zoneAPI, menuAPI, orderAPI, analyticsAPI } from '../../services/api.js';
-import logger from '../../services/LoggingService.js';
+import simpleTokenService from '../../shared/auth/SimpleTokenService';
 
-// Base query function that works with our mock API setup
+// Health check query that uses root URL (not /api/v1)
+const healthQuery = fetchBaseQuery({
+  baseUrl: import.meta.env.VITE_API_BASE_URL?.replace('/api/v1', '') ,
+  credentials: 'include',
+});
 const baseQuery = fetchBaseQuery({
-  baseUrl: '/',
+  baseUrl: import.meta.env.VITE_API_BASE_URL ,
   prepareHeaders: (headers, { getState }) => {
-    // Get token from the UI slice
-    const token = getState().ui?.auth?.token;
-    
+    // Get token using simple token service
+    const token = simpleTokenService.getAccessToken();
+
     if (token) {
       headers.set('authorization', `Bearer ${token}`);
+      console.log('🔑 RTK Query request with token');
+    } else {
+      console.warn('⚠️ RTK Query request without token');
     }
-    
+
     headers.set('content-type', 'application/json');
     return headers;
   },
+  credentials: 'include',
+  // Disable automatic retries to prevent infinite loops
+  timeout: 10000, // 10 second timeout
 });
 
-// Custom base query that works with our mock API structure
-const customBaseQuery = async (args, api, extraOptions) => {
-  const { endpoint, method = 'GET', data } = args;
-  
+// Track authentication failures to prevent infinite loops
+let authFailureHandled = false;
+
+// Enhanced base query with error handling and retry logic
+const enhancedBaseQuery = async (args, api, extraOptions) => {
   try {
-    // Log API call for development
-    logger.api(method, endpoint, data);
-    
-    // For now, route to our existing mock API functions
-    // This allows us to gradually migrate to real APIs
-    let result;
-    
-    // Simple routing based on endpoint patterns
-    if (endpoint.startsWith('/auth/')) {
-      result = await routeAuthAPI(endpoint, method, data);
-    } else if (endpoint.startsWith('/restaurants/')) {
-      result = await routeRestaurantAPI(endpoint, method, data);
-    } else if (endpoint.startsWith('/zones/')) {
-      result = await routeZoneAPI(endpoint, method, data);
-    } else if (endpoint.startsWith('/orders/')) {
-      result = await routeOrderAPI(endpoint, method, data);
-    } else if (endpoint.startsWith('/analytics/')) {
-      result = await routeAnalyticsAPI(endpoint, method, data);
-    } else {
-      // Default to base query for unhandled endpoints
-      result = await baseQuery(args, api, extraOptions);
+    // Log API call for development with detailed info
+    if (process.env.NODE_ENV === 'development') {
+      const token = simpleTokenService.getAccessToken();
+      console.log(`🔍 RTK Query API Call:`, {
+        method: args.method || 'GET',
+        url: args.url,
+        body: args.body,
+        hasToken: !!token,
+        tokenLength: token ? token.length : 0
+      });
     }
     
-    return { data: result };
+    let result = await baseQuery(args, api, extraOptions);
+    
+    // Enhanced error handling and debugging
+    if (result.error) {
+      const errorStatus = result.error.status;
+      const errorData = result.error.data;
+      
+      console.error('❌ RTK Query Error:', {
+        status: errorStatus,
+        data: errorData,
+        url: args.url,
+        method: args.method || 'GET',
+        isServerError: errorStatus >= 500,
+        isClientError: errorStatus >= 400 && errorStatus < 500,
+        isNetworkError: errorStatus === 'FETCH_ERROR'
+      });
+      
+      // Handle authentication errors - prevent infinite loop
+      if (errorStatus === 401) {
+        if (!authFailureHandled) {
+          authFailureHandled = true;
+          console.warn('🔑 Authentication failed - clearing tokens and redirecting to login');
+          simpleTokenService.clearTokens();
+          
+          // Reset all RTK Query cache to stop polling
+          api.dispatch(api.util.resetApiState());
+          
+          // Dispatch logout action
+          api.dispatch({ type: 'ui/logout' });
+          
+          // Redirect to login after a short delay to allow cleanup
+          setTimeout(() => {
+            window.location.href = '/login';
+          }, 100);
+        }
+        
+        // Return error without further processing to stop retries
+        return result;
+      }
+      
+      // For 500 errors, check if the response actually indicates success
+      if (errorStatus === 500 && errorData) {
+        // Check if the error response actually contains success data
+        if (errorData.success === true || (errorData.message && errorData.message.includes('successfully'))) {
+          console.warn('🤔 Server returned 500 but with success data - treating as success:', errorData);
+          // Convert error to success response
+          return {
+            data: errorData,
+            meta: result.meta
+          };
+        }
+      }
+      
+    } else if (process.env.NODE_ENV === 'development') {
+      console.log(`✅ RTK Query Success:`, {
+        url: args.url,
+        status: result.meta?.response?.status,
+        dataLength: result.data ? JSON.stringify(result.data).length : 0,
+        hasData: !!result.data,
+        success: result.data?.success
+      });
+    }
+    
+    return result;
   } catch (error) {
-    logger.error('API call failed', error, 'RTK Query');
+    console.error('💥 RTK Query Exception:', {
+      url: args.url,
+      error: error.message,
+      stack: error.stack
+    });
     return { error: { status: 'FETCH_ERROR', error: error.message } };
   }
 };
 
-// Routing functions for different API endpoints
-async function routeAuthAPI(endpoint, method, data) {
-  switch (endpoint) {
-    case '/auth/login':
-      return await authAPI.login(data);
-    case '/auth/logout':
-      return await authAPI.logout();
-    case '/auth/reset-password':
-      return await authAPI.resetPassword(data?.email);
-    default:
-      throw new Error(`Unknown auth endpoint: ${endpoint}`);
-  }
-}
-
-async function routeRestaurantAPI(endpoint, method, data) {
-  const pathParts = endpoint.split('/');
-  
-  if (endpoint === '/restaurants' && method === 'GET') {
-    return await restaurantAPI.getAll();
-  } else if (endpoint === '/restaurants' && method === 'POST') {
-    return await restaurantAPI.create(data);
-  } else if (pathParts.length === 3 && method === 'GET') {
-    // /restaurants/:id
-    const id = pathParts[2];
-    return await restaurantAPI.getById(id);
-  } else if (pathParts.length === 3 && method === 'PUT') {
-    // /restaurants/:id
-    const id = pathParts[2];
-    return await restaurantAPI.update(id, data);
-  } else if (pathParts.length === 3 && method === 'DELETE') {
-    // /restaurants/:id
-    const id = pathParts[2];
-    return await restaurantAPI.delete(id);
-  } else if (endpoint.includes('/generate-qr')) {
-    const id = pathParts[2];
-    return await restaurantAPI.generateQR(id);
-  }
-  
-  throw new Error(`Unknown restaurant endpoint: ${endpoint}`);
-}
-
-async function routeZoneAPI(endpoint, method, data) {
-  const pathParts = endpoint.split('/');
-  
-  if (pathParts.length >= 3) {
-    const zoneId = pathParts[2];
-    
-    if (endpoint === `/zones/${zoneId}` && method === 'GET') {
-      return await zoneAPI.getById(zoneId);
-    } else if (endpoint === `/zones/${zoneId}/vendors` && method === 'GET') {
-      return await zoneAPI.getVendorsByZone(zoneId);
-    } else if (endpoint === `/zones/${zoneId}/vendors` && method === 'POST') {
-      return await zoneAPI.addVendorToZone(zoneId, data);
-    } else if (endpoint.includes('/vendors/') && method === 'PUT') {
-      const vendorId = pathParts[4];
-      return await zoneAPI.updateVendorInZone(zoneId, vendorId, data);
-    } else if (endpoint.includes('/vendors/') && method === 'DELETE') {
-      const vendorId = pathParts[4];
-      return await zoneAPI.deleteVendorInZone(zoneId, vendorId);
-    }
-  }
-  
-  throw new Error(`Unknown zone endpoint: ${endpoint}`);
-}
-
-async function routeOrderAPI(endpoint, method, data) {
-  const pathParts = endpoint.split('/');
-  
-  if (endpoint === '/orders' && method === 'POST') {
-    return await orderAPI.create(data);
-  } else if (pathParts.length === 3 && method === 'GET') {
-    // /orders/:id
-    const orderId = pathParts[2];
-    return await orderAPI.getById(orderId);
-  } else if (endpoint.includes('/status') && method === 'PUT') {
-    const orderId = pathParts[2];
-    return await orderAPI.updateStatus(orderId, data.status);
-  }
-  
-  throw new Error(`Unknown order endpoint: ${endpoint}`);
-}
-
-async function routeAnalyticsAPI(endpoint, method, data) {
-  const pathParts = endpoint.split('/');
-  
-  if (endpoint.includes('/restaurant/')) {
-    const restaurantId = pathParts[3];
-    const period = data?.period || 'month';
-    return await analyticsAPI.getRestaurantAnalytics(restaurantId, period);
-  } else if (endpoint.includes('/platform')) {
-    const period = data?.period || 'month';
-    return await analyticsAPI.getPlatformAnalytics(period);
-  }
-  
-  throw new Error(`Unknown analytics endpoint: ${endpoint}`);
-}
-
-// Create the main API
+// Create the main API slice
 export const api = createApi({
   reducerPath: 'api',
-  baseQuery: customBaseQuery,
+  baseQuery: enhancedBaseQuery,
   tagTypes: [
-    'Auth',
-    'Restaurant',
-    'Zone', 
-    'Vendor',
-    'MenuCategory',
-    'MenuItem',
-    'Order',
-    'Analytics',
-    'User'
+    'User', 'Auth', 'Restaurant', 'Zone', 'Shop', 'Vendor',
+    'Order', 'Menu', 'MenuItem', 'MenuCategory', 
+    'Table', 'QRCode', 'Analytics', 'Notification'
   ],
-  endpoints: () => ({}),
+  // Prevent automatic refetching on errors to avoid infinite loops
+  refetchOnMountOrArgChange: false,
+  refetchOnFocus: false,
+  refetchOnReconnect: false,
+  // Keep unused data for 60 seconds
+  keepUnusedDataFor: 60,
+  endpoints: (builder) => ({
+    // Base health check endpoint - uses root path not /api/v1
+    getHealth: builder.query({
+      queryFn: async () => {
+        try {
+          const result = await healthQuery('/health', {}, {});
+          return { data: result.data };
+        } catch (error) {
+          return { error: { status: 'FETCH_ERROR', error: error.message } };
+        }
+      },
+      transformResponse: (response) => response.data || response,
+    }),
+  }),
 });
+
+// Export the auto-generated hooks
+export const {
+  useGetHealthQuery,
+} = api;
 
 export default api;

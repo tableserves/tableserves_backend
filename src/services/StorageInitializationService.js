@@ -5,8 +5,8 @@
  * including migration from legacy localStorage usage to the new caching service.
  */
 
-import storageMigrationService from './StorageMigrationService';
-import cachingService from './CachingService';
+import storageMigrationService from '../shared/storage/StorageMigrationService';
+import cachingService from '../shared/cache/CachingService';
 import dataAccessLayer from './DataAccessLayer';
 import logger from './LoggingService';
 

@@ -6,53 +6,59 @@ import {
   FaEdit,
   FaTrash,
   FaEye,
+  FaEyeSlash,
   FaStore,
   FaSearch,
   FaFilter,
   FaTimes,
-  FaDownload,
   FaUser,
   FaPhone,
   FaEnvelope,
-  FaMapMarkerAlt,
-  FaCheckCircle,
-  FaTimesCircle,
-  FaClock,
-  FaRupeeSign,
-  FaUtensils,
-  FaStar,
-  FaChartLine,
-  FaUserPlus,
   FaCheck,
+  FaUserPlus,
+  FaInfoCircle,
   FaKey
 } from 'react-icons/fa';
 import ZoneAdminLayout from '../ZoneAdminLayout';
-import ImageUpload from '../../common/ImageUpload';
-import QuotaBanner from '../common/QuotaBanner';
+import { ErrorBoundary } from '../../../shared/errors/ErrorBoundary';
+import { sanitizeInput } from '../../../utils/inputSanitizer';
 import { useSelector, useDispatch } from 'react-redux';
-import { 
-  fetchVendors, 
-  addVendor, 
-  updateVendor, 
-  deleteVendor 
-} from '../../../store/slices/entitiesSlice';
-import subscriptionService from '../../../services/SubscriptionService';
+import ApiService from '../../../shared/api/ApiService';
 import vendorService from '../../../services/VendorService';
-import logger from '../../../services/LoggingService';
+import { safeToastSuccess, safeToastError } from '../../../utils/toastUtils';
+import { fetchCurrentSubscription, fetchSubscriptionLimits, fetchCurrentCounts } from '../../../store/slices/subscriptionSlice';
+
+// Enhanced Password Requirement Component
+const PasswordRequirement = ({ met, text }) => (
+  <div className="flex items-center gap-2">
+    <div className={`w-3.5 h-3.5 rounded-full flex items-center justify-center transition-colors ${met ? 'bg-green-500' : 'bg-theme-bg-tertiary border border-theme-border'}`}>
+      {met && <FaCheck className="text-white text-[8px]" />}
+    </div>
+    <span className={`text-xs font-raleway font-medium transition-colors ${met ? 'text-green-600' : 'text-theme-text-tertiary'}`}>
+      {text}
+    </span>
+  </div>
+);
 
 const AllVendors = () => {
   const { zoneId } = useParams();
   const navigate = useNavigate();
   const dispatch = useDispatch();
-  const { vendors = [], vendorsLoading: loading, vendorsError: error } = useSelector((state) => state.entities);
-  
-  const [subscription, setSubscription] = useState(null);
-  const [vendorLimitStatus, setVendorLimitStatus] = useState({ allowed: true, message: '' });
+  const [vendors, setVendors] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
+  const subscription = useSelector((state) => state.subscription.current);
+  const subscriptionLimits = useSelector((state) => state.subscription.limits);
+  const currentCounts = useSelector((state) => state.subscription.currentCounts);
+
+  const [vendorLimitStatus, setVendorLimitStatus] = useState({ allowed: true, message: '', currentCount: 0, maxAllowed: 0 });
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [showForm, setShowForm] = useState(false);
   const [editingVendor, setEditingVendor] = useState(null);
+  const [showPassword, setShowPassword] = useState(false);
+
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -65,448 +71,641 @@ const AllVendors = () => {
     coverImage: null,
     password: ''
   });
+
+  const [passwordRequirements, setPasswordRequirements] = useState({
+    length: false, uppercase: false, lowercase: false, number: false, symbol: false, isValid: false
+  });
+  const [passwordError, setPasswordError] = useState('');
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [vendorToDelete, setVendorToDelete] = useState(null);
+
+  const validatePassword = (password) => {
+    const checks = {
+      length: password.length >= 8,
+      uppercase: /[A-Z]/.test(password),
+      lowercase: /[a-z]/.test(password),
+      number: /[0-9]/.test(password),
+      symbol: /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)
+    };
+    const isValid = Object.values(checks).every(Boolean);
+    return { ...checks, isValid };
+  };
+
+  const isPasswordValid = !editingVendor ? passwordRequirements.isValid : true;
 
   useEffect(() => {
-    if (zoneId) {
-      dispatch(fetchVendors(zoneId));
-      
-      // Get subscription data using the service
-      const subscriptionData = subscriptionService.getCurrentSubscription();
-      setSubscription(subscriptionData);
-      
-      // Sync vendor data to ensure consistency
-      vendorService.synchronizeVendorData(zoneId);
-      
-      logger.debug('AllVendors component initialized', { zoneId, hasSubscription: !!subscriptionData }, 'AllVendors');
-    }
-  }, [zoneId, dispatch]);
+    const loadVendors = async () => {
+      if (zoneId) {
+        setLoading(true);
+        try {
+          const vendorsData = await ApiService.getZoneVendors(zoneId);
+          console.log('📦 Vendors data received:', vendorsData);
+          const safeVendors = Array.isArray(vendorsData) ? vendorsData : [];
+          console.log('✅ Safe vendors:', safeVendors);
+          setVendors(safeVendors);
+          await vendorService.getVendors(zoneId);
+        } catch (error) {
+          safeToastError(error.message);
+          setVendors([]);
+        } finally {
+          setLoading(false);
+        }
+      }
+    };
+    loadVendors();
+  }, [zoneId]);
 
-  // Update vendor limit status when vendors or subscription changes
   useEffect(() => {
-    if (zoneId && vendors) {
-      const limitCheck = subscriptionService.checkVendorLimit(zoneId, vendors.length);
-      setVendorLimitStatus(limitCheck);
-      
-      logger.debug('Vendor limit check', {
-        zoneId,
-        currentCount: vendors.length,
-        limitCheck
-      }, 'AllVendors');
+    dispatch(fetchCurrentSubscription());
+    dispatch(fetchSubscriptionLimits());
+    dispatch(fetchCurrentCounts());
+  }, [dispatch]);
+
+  useEffect(() => {
+    if (zoneId && vendors && subscriptionLimits) {
+      const maxVendors = subscriptionLimits.maxVendors || subscription?.maxVendors || 3;
+      const currentCount = currentCounts?.vendors || vendors.length;
+      const allowed = currentCount < maxVendors;
+      setVendorLimitStatus({
+        allowed,
+        currentCount,
+        maxAllowed: maxVendors,
+        unlimited: false,
+        message: !allowed ? `Vendor limit reached! You can only have ${maxVendors} vendors on your current plan.` : ''
+      });
     }
-  }, [zoneId, vendors]);
+  }, [zoneId, vendors.length, subscriptionLimits, currentCounts, subscription]);
 
   const filteredVendors = vendors.filter(vendor => {
-    const matchesSearch = vendor.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    const matchesSearch = vendor.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (vendor.cuisine && vendor.cuisine.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      vendor.ownerName.toLowerCase().includes(searchTerm.toLowerCase());
+      (vendor.description && vendor.description.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      vendor.ownerName?.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = statusFilter === 'all' || vendor.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-
-    if (editingVendor) {
-      // Update existing vendor
-      dispatch(updateVendor({ 
-        zoneId, 
-        vendorId: editingVendor.id, 
-        vendorData: formData 
-      }));
-      logger.info('Vendor updated', { vendorId: editingVendor.id, zoneId }, 'AllVendors');
+  const handlePasswordChange = (e) => {
+    const password = e.target.value;
+    setFormData({ ...formData, password });
+    const validation = validatePassword(password);
+    setPasswordRequirements(validation);
+    if (!validation.isValid && password.length > 0) {
+      setPasswordError('Password must meet all 5 requirements');
     } else {
-      // Check vendor limits before adding new vendor
-      const limitCheck = subscriptionService.checkVendorLimit(zoneId, vendors.length);
-      
-      if (!limitCheck.allowed) {
-        logger.warn('Vendor limit reached', {
-          zoneId,
-          currentCount: vendors.length,
-          maxCount: limitCheck.maxCount,
-          message: limitCheck.message
-        }, 'AllVendors');
-        
-        setShowUpgradeModal(true);
-        return;
-      }
-      
-      const username = formData.name.toLowerCase().replace(/\s+/g, '_') + '_vendor';
-      const vendorData = {
-        ...formData,
-        loginCredentials: {
-          username: username,
-          password: formData.password,
-        }
-      };
-      
-      dispatch(addVendor({ zoneId, vendorData }));
-      
-      logger.info('Vendor creation initiated', {
-        zoneId,
-        vendorName: formData.name,
-        username
-      }, 'AllVendors');
-      
-      alert(`Vendor creation initiated! Check the list for the new vendor shortly.\n\nLogin Credentials:\nUsername: ${username}\nPassword: ${formData.password}`);
+      setPasswordError('');
     }
+  };
 
-    resetForm();
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      if (editingVendor) {
+        // For editing, only send the fields that can be updated
+        const updateData = {
+          name: formData.name,
+          description: formData.description,
+          cuisine: formData.cuisine,
+          ownerName: formData.ownerName,
+          ownerPhone: formData.ownerPhone,
+          ownerEmail: formData.ownerEmail,
+          status: formData.status
+        };
+        
+        console.log('Updating vendor with data:', updateData);
+        await ApiService.updateZoneVendor(zoneId, editingVendor.id, updateData);
+        safeToastSuccess('Vendor updated successfully');
+      } else {
+        if (!vendorLimitStatus.allowed) {
+          safeToastError(vendorLimitStatus.message);
+          setShowUpgradeModal(true);
+          return;
+        }
+        const vendorData = {
+          name: formData.name,
+          description: formData.description,
+          cuisine: formData.cuisine,
+          ownerName: formData.ownerName,
+          ownerPhone: formData.ownerPhone,
+          ownerEmail: formData.ownerEmail,
+          status: formData.status,
+          loginCredentials: {
+            username: formData.name.toLowerCase().replace(/\s+/g, '_') + '_vendor',
+            password: formData.password,
+          }
+        };
+        
+        console.log('Creating vendor with data:', vendorData);
+        await ApiService.createZoneVendor(zoneId, vendorData);
+        safeToastSuccess('Vendor created successfully!');
+      }
+
+      // Refresh vendor list
+      const vendorsData = await ApiService.getZoneVendors(zoneId);
+      setVendors(Array.isArray(vendorsData) ? vendorsData : []);
+      await vendorService.getVendors(zoneId);
+      resetForm();
+    } catch (error) {
+      console.error('Error saving vendor:', error);
+      safeToastError(error.message || 'Failed to save vendor');
+    }
   };
 
   const resetForm = () => {
-    setFormData({
-      name: '',
-      description: '',
-      cuisine: '',
-      ownerName: '',
-      ownerPhone: '',
-      ownerEmail: '',
-      status: 'active',
-      logo: null,
-      coverImage: null,
-      password: ''
-    });
+    setFormData({ name: '', description: '', cuisine: '', ownerName: '', ownerPhone: '', ownerEmail: '', status: 'active', logo: null, coverImage: null, password: '' });
+    setPasswordRequirements({ length: false, uppercase: false, lowercase: false, number: false, symbol: false, isValid: false });
+    setPasswordError('');
+    setShowPassword(false);
     setEditingVendor(null);
     setShowForm(false);
   };
 
   const handleEdit = (vendor) => {
-    setFormData({
-      name: vendor.name,
-      description: vendor.description,
-      cuisine: vendor.cuisine,
-      ownerName: vendor.ownerName,
-      ownerPhone: vendor.ownerPhone,
-      ownerEmail: vendor.ownerEmail,
-      status: vendor.status,
-      logo: vendor.logo || null,
-      coverImage: vendor.coverImage || null,
-      password: '' // Don't pre-fill password
+    setFormData({ 
+      name: vendor.name || '',
+      description: vendor.description || '',
+      cuisine: vendor.cuisine || '',
+      ownerName: vendor.ownerName || '',
+      ownerPhone: vendor.ownerPhone || '',
+      ownerEmail: vendor.ownerEmail || '',
+      status: vendor.status || 'active',
+      logo: null,
+      coverImage: null,
+      password: ''
     });
     setEditingVendor(vendor);
     setShowForm(true);
   };
 
-  const handleDelete = (vendorId) => {
-    if (window.confirm('Are you sure you want to remove this vendor from your zone?')) {
-      dispatch(deleteVendor({ zoneId, vendorId }));
+  const handleDelete = (vendor) => {
+    setVendorToDelete(vendor);
+    setShowDeleteModal(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!vendorToDelete) return;
+    try {
+      await ApiService.deleteZoneVendor(zoneId, vendorToDelete.id);
+      setVendors(prev => prev.filter(v => v.id !== vendorToDelete.id));
+      safeToastSuccess('Vendor deleted successfully');
+    } catch (error) {
+      safeToastError(error.message);
+    } finally {
+      setShowDeleteModal(false);
+      setVendorToDelete(null);
     }
   };
 
   const getStatusColor = (status) => {
     switch (status) {
-      case 'active': return 'status-success bg-status-success-light';
-      case 'pending': return 'status-warning bg-status-warning-light';
-      case 'inactive': return 'status-error bg-status-error-light';
-      default: return 'text-theme-text-tertiary bg-theme-bg-secondary';
+      case 'active': return 'text-green-600 bg-green-500/10 border-green-500/20';
+      case 'pending': return 'text-amber-600 bg-amber-500/10 border-amber-500/20';
+      case 'inactive': return 'text-red-600 bg-red-500/10 border-red-500/20';
+      default: return 'text-theme-text-secondary bg-theme-bg-secondary border-theme-border';
     }
   };
 
   if (loading && vendors.length === 0) {
     return (
       <ZoneAdminLayout>
-        <div className="flex items-center justify-center min-h-screen">
-          <div className="text-theme-text-primary text-xl">Loading vendors...</div>
+        <div className="flex items-center justify-center h-[60vh]">
+          <div className="flex flex-col items-center gap-4">
+            <div className="w-12 h-12 border-4 border-theme-accent-primary border-t-transparent rounded-full animate-spin"></div>
+            <p className="text-theme-text-secondary font-medium font-raleway tracking-wide">Loading vendors...</p>
+          </div>
         </div>
       </ZoneAdminLayout>
     );
   }
 
+  // Refined Input Styling - slightly more compact padding for spacious feel
+  const inputClass = "w-full bg-theme-bg-primary border border-theme-border text-theme-text-primary rounded-xl px-4 py-2.5 font-raleway focus:outline-none focus:border-theme-accent-primary focus:ring-1 focus:ring-theme-accent-primary transition-all shadow-sm";
+  const labelClass = "block text-theme-text-secondary font-raleway font-semibold mb-1.5 text-sm";
+  const sectionCardClass = "bg-theme-bg-secondary/40 border border-theme-border rounded-xl p-5 md:p-6 space-y-5 shadow-sm";
+
   return (
-    <ZoneAdminLayout>
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center space-y-4 sm:space-y-0">
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-fredoka text-theme-text-primary mb-2">All Vendors</h1>
-            <motion.div
-              initial={{ opacity: 0, y: -6 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="rounded-xl "
-            >
-              <QuotaBanner zoneId={zoneId} currentCount={vendors.length} type="vendors" />
-            </motion.div>
-            <p className="text-theme-text-secondary mt-6 font-raleway text-sm sm:text-base">Manage all vendors in your food zone</p>
+    <ErrorBoundary>
+      <ZoneAdminLayout>
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-6 pb-12">
+
+          {/* 1. Global Search & Filters (At the Top) */}
+          <div className="flex flex-col sm:flex-row gap-4 mb-2">
+            <div className="relative flex-1">
+              <FaSearch className="absolute left-4 top-1/2 -translate-y-1/2 text-theme-text-tertiary" />
+              <input
+                type="text"
+                placeholder="Search vendors, cuisines, or owners..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full bg-theme-bg-primary border border-theme-border text-theme-text-primary rounded-xl pl-11 pr-4 py-3 font-raleway focus:outline-none focus:border-theme-accent-primary transition-colors text-sm shadow-sm"
+              />
+            </div>
+            <div className="relative min-w-[180px]">
+              <FaFilter className="absolute left-4 top-1/2 -translate-y-1/2 text-theme-text-tertiary text-xs" />
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="w-full bg-theme-bg-primary border border-theme-border text-theme-text-primary rounded-xl pl-10 pr-8 py-3 font-raleway focus:outline-none focus:border-theme-accent-primary transition-colors text-sm appearance-none cursor-pointer shadow-sm"
+              >
+                <option value="all">All Status</option>
+                <option value="active">Active</option>
+                <option value="pending">Pending</option>
+                <option value="inactive">Inactive</option>
+              </select>
+            </div>
           </div>
-          <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-3">
-            <button
-              onClick={() => navigate(`/tableserve/zone/${zoneId}/vendors/credentials`)}
-              className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-raleway font-semibold flex items-center justify-center space-x-2"
-            >
-              <FaKey />
-              <span>Manage Credentials</span>
-            </button>
+
+          {/* 2. Page Header & Actions */}
+          <div className="admin-card p-6 rounded-2xl flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 border border-theme-border shadow-sm">
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-fredoka text-theme-text-primary mb-1">All Vendors</h1>
+              <p className="text-theme-text-secondary font-raleway text-sm">Manage and monitor all shop partners in your zone.</p>
+            </div>
+
             <button
               onClick={() => {
                 if (!vendorLimitStatus.allowed) {
+                  safeToastError(vendorLimitStatus.message);
                   setShowUpgradeModal(true);
                 } else {
                   resetForm();
                   setShowForm(true);
                 }
               }}
-              disabled={!vendorLimitStatus.allowed && !vendorLimitStatus.unlimited}
-              className={`w-full sm:w-auto px-4 py-2 rounded-lg font-raleway font-semibold flex items-center justify-center space-x-2 transition-colors
-                ${vendorLimitStatus.allowed || vendorLimitStatus.unlimited
-                  ? 'bg-theme-accent-primary hover:bg-theme-accent-hover text-theme-text-inverse'
-                  : 'bg-gray-400 cursor-not-allowed text-gray-600'
-                }`}
-              title={!vendorLimitStatus.allowed ? vendorLimitStatus.message : 'Add new vendor'}
+              disabled={!vendorLimitStatus.allowed}
+              className={`w-full lg:w-auto px-6 py-2.5 rounded-xl font-raleway font-bold flex items-center justify-center gap-2 transition-all shadow-sm whitespace-nowrap h-[50px]
+                  ${vendorLimitStatus.allowed
+                  ? 'btn-primary hover:shadow-md'
+                  : 'bg-theme-bg-tertiary text-theme-text-tertiary cursor-not-allowed border border-theme-border'}
+                `}
             >
-              <FaUserPlus />
-              <span>{vendorLimitStatus.allowed || vendorLimitStatus.unlimited ? 'Add Vendor' : `Limit Reached (${vendorLimitStatus.currentCount}/${vendorLimitStatus.maxCount})`}</span>
+              {vendorLimitStatus.allowed ? (
+                <>
+                  <FaPlus className="text-sm" />
+                  <span>Add Vendor</span>
+                </>
+              ) : (
+                <>
+                  <FaUserPlus className="text-sm" />
+                  <span>Limit Reached ({vendorLimitStatus.currentCount}/{vendorLimitStatus.maxAllowed})</span>
+                </>
+              )}
             </button>
+
           </div>
-        </div>
-        
-        {error && <p className="text-red-500 text-center my-4">Error: {error}</p>}
 
-        {/* Search and Filters */}
-        <div className="bg-secondary backdrop-blur-lg rounded-2xl p-4 sm:p-6 border admin-card border-secondary">
-          <div className="flex flex-col sm:flex-row gap-4">
-            <div className="flex-1 relative">
-              <FaSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-secondary" />
-              <input
-                type="text"
-                placeholder="Search vendors, cuisine, or owners..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full bg-secondary border border-secondary rounded-lg pl-10 pr-4 py-2 text-secondary placeholder-primary focus:outline-none focus:border-accent"
-              />
-            </div>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="bg-secondary border border-secondary rounded-lg px-4 py-2 text-secondary focus:outline-none focus:border-accent"
-            >
-              <option value="all" className="text-black bg-transparent">All Status</option>
-              <option value="active" className='text-green-500'>Active</option>
-              <option value="pending" className='text-yellow-500'>Pending</option>
-              <option value="inactive" className='text-red-500'>Inactive</option>
-            </select>
-          </div>
-        </div>
-
-        {/* Vendors Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-          {filteredVendors.map((vendor) => (
-            <motion.div
-              key={vendor.id}
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="admin-card rounded-2xl p-6"
-            >
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex items-center space-x-3">
-                  <div className="w-12 h-12 bg-theme-accent-primary rounded-xl flex items-center justify-center overflow-hidden">
-                    {vendor.logo ? (
-                      <img
-                        src={vendor.logo}
-                        alt={`${vendor.name} logo`}
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <FaStore className="text-theme-text-inverse text-xl" />
-                    )}
-                  </div>
-                  <div>
-                    <h3 className="text-theme-text-primary font-fredoka text-lg">{vendor.name}</h3>
-                    <p className="text-theme-text-secondary font-raleway text-sm">{vendor.cuisine}</p>
-                  </div>
+          {/* 3. Vendors Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+            {filteredVendors.length === 0 ? (
+              <div className="col-span-full admin-card rounded-2xl p-12 flex flex-col items-center justify-center text-center border border-theme-border border-dashed">
+                <div className="w-20 h-20 bg-theme-bg-secondary rounded-full flex items-center justify-center mb-4">
+                  <FaStore className="text-3xl text-theme-text-tertiary" />
                 </div>
-                <span className={`px-3 py-1 rounded-full text-xs font-raleway font-medium ${getStatusColor(vendor.status)}`}>
-                  {vendor.status.charAt(0).toUpperCase() + vendor.status.slice(1)}
-                </span>
+                <h3 className="text-xl font-fredoka text-theme-text-primary mb-2">No Vendors Found</h3>
+                <p className="text-theme-text-secondary font-raleway max-w-sm">
+                  {searchTerm || statusFilter !== 'all' ? 'Try adjusting your search filters.' : 'You haven\'t added any vendors yet.'}
+                </p>
               </div>
-
-              <p className="text-theme-text-secondary font-raleway text-sm mb-4">{vendor.description}</p>
-
-              <div className="border-t border-theme-border-primary pt-4">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-theme-text-secondary font-raleway text-sm">Owner: {vendor.ownerName}</p>
-                </div>
-                <div className="flex items-center justify-between">
-                  <p className="text-theme-text-tertiary font-raleway text-xs">{vendor.ownerPhone}</p>
-                  <div className="flex items-center space-x-2">
-                    <button
-                      onClick={() => handleEdit(vendor)}
-                      className="p-2 text-theme-text-secondary hover:text-theme-accent-primary hover:bg-theme-accent-primary/10 rounded-lg transition-colors"
-                      title="Edit Vendor"
-                    >
-                      <FaEdit />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(vendor.id)}
-                      className="p-2 text-status-error hover:bg-status-error/10 rounded-lg transition-colors"
-                      title="Delete Vendor"
-                    >
-                      <FaTrash />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-          ))}
-        </div>
-
-        {/* Add/Edit Vendor Modal */}
-        <AnimatePresence>
-          {showForm && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-              onClick={(e) => e.target === e.currentTarget && resetForm()}
-            >
-              <motion.div
-                initial={{ scale: 0.9, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.9, opacity: 0 }}
-                className="admin-card rounded-2xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto"
-              >
-                <div className="flex justify-between items-center mb-6">
-                  <h2 className="text-xl font-raleway font-semibold text-theme-text-primary">
-                    {editingVendor ? 'Edit Vendor' : 'Add New Vendor'}
-                  </h2>
-                  <button
-                    onClick={resetForm}
-                    className="text-theme-text-tertiary hover:text-theme-text-primary"
-                  >
-                    <FaTimes />
-                  </button>
-                </div>
-
-                <form onSubmit={handleSubmit} className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 ">
-                    <div>
-                      <label className="block text-theme-text-primary font-raleway font-medium mb-2">Vendor Name</label>
-                      <input
-                        type="text"
-                        value={formData.name}
-                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                        className="input-theme rounded-lg px-4 py-2 w-full focus:outline-none autofill-fix"
-                        required
-                        placeholder="Enter vendor name"
-                      />
+            ) : (
+              filteredVendors.map((vendor) => (
+                <motion.div
+                  key={vendor.id}
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="admin-card rounded-2xl border border-theme-border shadow-sm hover:shadow-xl hover:border-theme-accent-primary/40 transition-all duration-300 flex flex-col overflow-hidden"
+                >
+                  <div className="p-5 flex items-start gap-4">
+                    <div className="w-14 h-14 shrink-0 bg-theme-accent-primary/10 rounded-xl flex items-center justify-center border border-theme-accent-primary/20">
+                      <FaStore className="text-theme-accent-primary text-xl" />
                     </div>
-                    <div>
-                      <label className="block text-theme-text-primary font-raleway font-medium mb-2">Cuisine Type</label>
-                      <input
-                        type="text"
-                        value={formData.cuisine}
-                        onChange={(e) => setFormData({ ...formData, cuisine: e.target.value })}
-                        className="input-theme rounded-lg px-4 py-2 w-full focus:outline-none autofill-fix"
-                        required
-                        placeholder="Enter cuisine type"
-                      />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex justify-between items-start gap-2">
+                        <h3 className="text-lg font-fredoka text-theme-text-primary truncate">{vendor.name}</h3>
+                        <span className={`shrink-0 px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider border ${getStatusColor(vendor.status)}`}>
+                          {vendor.status}
+                        </span>
+                      </div>
+                      {vendor.cuisine && (
+                        <p className="text-theme-text-secondary text-sm font-raleway font-medium truncate capitalize">
+                          {vendor.cuisine.replace(/_/g, ' ')}
+                        </p>
+                      )}
                     </div>
                   </div>
 
-                  <div>
-                    <label className="block text-theme-text-primary font-raleway font-medium mb-2">Description</label>
-                    <textarea
-                      value={formData.description}
-                      onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                      className="input-theme rounded-lg px-4 py-2 w-full focus:outline-none autofill-fix"
-                      rows="3"
-                      required
-                      placeholder="Enter vendor description"
-                    />
+                  <div className="px-5 pb-4 flex-1">
+                    <p className="text-theme-text-secondary font-raleway text-xs line-clamp-2 leading-relaxed bg-theme-bg-secondary/50 p-3 rounded-xl border border-theme-border">
+                      {vendor.description || "No description provided."}
+                    </p>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-theme-text-primary font-raleway font-medium mb-2">Owner Name</label>
-                      <input
-                        type="text"
-                        value={formData.ownerName}
-                        onChange={(e) => setFormData({ ...formData, ownerName: e.target.value })}
-                        className="input-theme rounded-lg px-4 py-2 w-full focus:outline-none autofill-fix"
-                        required
-                        placeholder="Enter owner name"
-                      />
+                  <div className="p-5 border-t border-theme-border bg-theme-bg-secondary flex flex-col gap-4">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="flex items-center gap-2 overflow-hidden">
+                        <FaUser className="text-theme-text-tertiary text-xs shrink-0" />
+                        <span className="text-theme-text-primary text-xs font-semibold font-raleway truncate">{vendor.ownerName}</span>
+                      </div>
+                      <div className="flex items-center gap-2 overflow-hidden">
+                        <FaPhone className="text-theme-text-tertiary text-xs shrink-0" />
+                        <span className="text-theme-text-primary text-xs font-semibold font-raleway truncate">{vendor.ownerPhone}</span>
+                      </div>
                     </div>
-                    <div>
-                      <label className="block text-theme-text-primary font-raleway font-medium mb-2">Owner Phone</label>
-                      <input
-                        type="tel"
-                        value={formData.ownerPhone}
-                        onChange={(e) => setFormData({ ...formData, ownerPhone: e.target.value })}
-                        className="input-theme rounded-lg px-4 py-2 w-full focus:outline-none autofill-fix"
-                        required
-                        placeholder="Enter phone number"
-                      />
-                    </div>
-                  </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-theme-text-primary font-raleway font-medium mb-2">Owner Email</label>
-                      <input
-                        type="email"
-                        value={formData.ownerEmail}
-                        onChange={(e) => setFormData({ ...formData, ownerEmail: e.target.value })}
-                        className="input-theme rounded-lg px-4 py-2 w-full focus:outline-none autofill-fix"
-                        required
-                        placeholder="Enter email address"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-theme-text-primary font-raleway font-medium mb-2">Status</label>
-                      <select
-                        value={formData.status}
-                        onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                        className="input-theme rounded-lg px-4 py-2 w-full focus:outline-none"
+                    <div className="flex items-center justify-end gap-2 pt-2 border-t border-theme-border/50">
+                      <button
+                        onClick={() => handleEdit(vendor)}
+                        className="flex-1 py-2 bg-theme-bg-primary border border-theme-border text-theme-text-secondary hover:text-theme-accent-primary hover:border-theme-accent-primary rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2"
                       >
-                        <option value="active">Active</option>
-                        <option value="pending">Pending</option>
-                        <option value="inactive">Inactive</option>
-                      </select>
+                        <FaEdit /> Edit
+                      </button>
+                      <button
+                        onClick={() => handleDelete(vendor)}
+                        className="w-10 h-10 flex items-center justify-center bg-red-100 border border-red-200 text-red-600 hover:bg-red-600 hover:text-white rounded-lg transition-all duration-200 shrink-0">
+                        <FaTrash />
+                      </button>
                     </div>
                   </div>
+                </motion.div>
+              ))
+            )}
+          </div>
 
-                  {!editingVendor && (
-                    <div>
-                      <label className="block text-theme-text-primary font-raleway font-medium mb-2">Login Password</label>
-                      <input
-                        type="password"
-                        value={formData.password}
-                        onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                        className="input-theme rounded-lg px-4 py-2 w-full focus:outline-none   autofill-fix"
-                        required
-                        placeholder="Enter login password for vendor"
-                      />
-                      <p className="text-theme-text-tertiary text-xs mt-1">This password will be used by the vendor to login and manage their shop</p>
-                    </div>
-                  )}
-
-                  <div className="flex space-x-4 pt-4">
+          {/* ADD / EDIT VENDOR MODAL */}
+          <AnimatePresence>
+            {showForm && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4"
+                onClick={(e) => e.target === e.currentTarget && resetForm()}
+              >
+                <motion.div
+                  initial={{ scale: 0.95, opacity: 0, y: 20 }}
+                  animate={{ scale: 1, opacity: 1, y: 0 }}
+                  exit={{ scale: 0.95, opacity: 0, y: 20 }}
+                  className="bg-theme-bg-primary rounded-xl shadow-2xl border border-theme-border w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden"
+                >
+                  {/* Compact Header */}
+                  <div className="px-6 py-4 border-b border-theme-border bg-theme-bg-primary flex items-center justify-between sticky top-0 z-20">
+                    <h2 className="text-xl font-fredoka text-theme-text-primary">
+                      {editingVendor ? 'Edit Vendor Details' : 'Onboard New Vendor'}
+                    </h2>
                     <button
-                      type="submit"
-                      className="flex-1 btn-primary py-2 rounded-lg font-raleway flex items-center justify-center space-x-2"
+                      onClick={resetForm}
+                      className="w-8 h-8 flex items-center justify-center rounded-full text-theme-text-secondary hover:bg-theme-bg-secondary hover:text-theme-text-primary transition-colors"
                     >
-                      <FaCheck />
-                      <span>{editingVendor ? 'Update Vendor' : 'Add Vendor'}</span>
+                      <FaTimes className="text-lg" />
                     </button>
+                  </div>
+
+                  {/* Body with Stacked Details */}
+                  <div className="p-6 overflow-y-auto custom-scrollbar">
+                    <form id="vendor-form" onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8">
+
+                      {/* Left Column: Shop Info */}
+                      <div className="space-y-6">
+                        <div className={sectionCardClass}>
+                          <div className="flex items-center gap-2 mb-1">
+                            <FaStore className="text-theme-accent-primary" />
+                            <h3 className="font-fredoka text-lg text-theme-text-primary">Shop Information</h3>
+                          </div>
+
+                          <div>
+                            <label className={labelClass}>Vendor/Shop Name *</label>
+                            <input
+                              type="text"
+                              value={formData.name}
+                              onChange={(e) => setFormData({ ...formData, name: sanitizeInput(e.target.value) })}
+                              className={inputClass}
+                              required
+                              placeholder="e.g. Burger King"
+                            />
+                          </div>
+
+                          <div>
+                            <label className={labelClass}>Cuisine Type *</label>
+                            <input
+                              type="text"
+                              value={formData.cuisine}
+                              onChange={(e) => setFormData({ ...formData, cuisine: e.target.value })}
+                              className={inputClass}
+                              required
+                              placeholder="e.g. American, Fast Food"
+                            />
+                          </div>
+
+                          <div>
+                            <label className={labelClass}>Description *</label>
+                            <textarea
+                              value={formData.description}
+                              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                              className={`${inputClass} h-24 resize-none`}
+                              required
+                              placeholder="Brief description of the vendor's offerings..."
+                            />
+                          </div>
+
+                          {editingVendor && (
+                            <div>
+                              <label className={labelClass}>Status</label>
+                              <select
+                                value={formData.status}
+                                onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                                className={`${inputClass} appearance-none cursor-pointer`}
+                              >
+                                <option value="active">Active</option>
+                                <option value="pending">Pending</option>
+                                <option value="inactive">Inactive</option>
+                              </select>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Right Column: Owner & Credentials */}
+                      <div className="space-y-6">
+                        <div className={sectionCardClass}>
+                          <div className="flex items-center gap-2 mb-1">
+                            <FaUser className="text-status-info" />
+                            <h3 className="font-fredoka text-lg text-theme-text-primary">Owner Details</h3>
+                          </div>
+
+                          {/* Stacked Vertically */}
+                          <div>
+                            <label className={labelClass}>Owner Full Name *</label>
+                            <input
+                              type="text"
+                              value={formData.ownerName}
+                              onChange={(e) => setFormData({ ...formData, ownerName: e.target.value })}
+                              className={inputClass}
+                              required
+                              placeholder="John Doe"
+                            />
+                          </div>
+
+                          <div>
+                            <label className={labelClass}>Phone Number *</label>
+                            <div className="relative">
+                              <FaPhone className="absolute left-4 top-1/2 -translate-y-1/2 text-theme-text-tertiary text-xs" />
+                              <input
+                                type="tel"
+                                value={formData.ownerPhone}
+                                onChange={(e) => setFormData({ ...formData, ownerPhone: e.target.value })}
+                                className={`${inputClass} pl-10`}
+                                required
+                                maxLength={10}
+                                placeholder="9876543210"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className={labelClass}>Email Address *</label>
+                            <div className="relative">
+                              <FaEnvelope className="absolute left-4 top-1/2 -translate-y-1/2 text-theme-text-tertiary text-xs" />
+                              <input
+                                type="email"
+                                value={formData.ownerEmail}
+                                onChange={(e) => setFormData({ ...formData, ownerEmail: e.target.value })}
+                                className={`${inputClass} pl-10`}
+                                required
+                                placeholder="john@example.com"
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        {!editingVendor && (
+                          <div className={sectionCardClass}>
+                            <div className="flex items-center gap-2 mb-1">
+                              <FaKey className="text-status-warning" />
+                              <h3 className="font-fredoka text-lg text-theme-text-primary">Vendor Credentials</h3>
+                            </div>
+
+                            <div>
+                              <label className={labelClass}>Initial Password *</label>
+                              <div className="relative">
+                                <input
+                                  type={showPassword ? 'text' : 'password'}
+                                  value={formData.password}
+                                  onChange={handlePasswordChange}
+                                  className={`${inputClass} ${passwordError ? 'border-status-danger ring-status-danger' : ''} pr-12`}
+                                  required
+                                  placeholder="Set a secure password"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => setShowPassword(!showPassword)}
+                                  className="absolute right-4 top-1/2 -translate-y-1/2 text-theme-text-tertiary hover:text-theme-text-primary focus:outline-none"
+                                >
+                                  {showPassword ? <FaEyeSlash /> : <FaEye />}
+                                </button>
+                              </div>
+
+                              <div className="mt-4 p-4 bg-theme-bg-primary border border-theme-border rounded-xl space-y-2">
+                                <p className="text-[10px] font-bold text-theme-text-secondary uppercase tracking-wider mb-2">Requirements</p>
+                                <div className="grid grid-cols-2 gap-y-2 gap-x-2">
+                                  <PasswordRequirement met={passwordRequirements.length} text="8+ chars" />
+                                  <PasswordRequirement met={passwordRequirements.uppercase} text="Uppercase" />
+                                  <PasswordRequirement met={passwordRequirements.lowercase} text="Lowercase" />
+                                  <PasswordRequirement met={passwordRequirements.number} text="Number" />
+                                  <PasswordRequirement met={passwordRequirements.symbol} text="Symbol (!@#...)" />
+                                </div>
+                              </div>
+                              {passwordError && (
+                                <p className="mt-2 text-xs font-semibold text-status-danger flex items-center gap-1">
+                                  <FaInfoCircle /> {passwordError}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </form>
+                  </div>
+
+                  {/* Compact Footer */}
+                  <div className="px-6 py-4 border-t border-theme-border bg-theme-bg-secondary rounded-b-xl flex items-center justify-end gap-3 sticky bottom-0 z-20">
                     <button
                       type="button"
                       onClick={resetForm}
-                      className="flex-1 btn-secondary py-2 rounded-lg font-raleway flex items-center justify-center space-x-2"
+                      className="px-5 py-2.5 rounded-lg font-raleway font-semibold text-theme-text-secondary hover:bg-theme-border hover:text-theme-text-primary transition-colors"
                     >
-                      <FaTimes />
-                      <span>Cancel</span>
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      form="vendor-form"
+                      disabled={!isPasswordValid && !editingVendor}
+                      className={`btn-primary px-6 py-2.5 rounded-lg font-raleway font-semibold flex items-center gap-2 shadow-md transition-all
+                        ${(!isPasswordValid && !editingVendor) ? 'opacity-50 cursor-not-allowed shadow-none' : 'hover:shadow-lg'}
+                      `}
+                    >
+                      <FaCheck className="text-sm" />
+                      <span>{editingVendor ? 'Update Vendor' : 'Create Vendor'}</span>
                     </button>
                   </div>
-                </form>
+                </motion.div>
               </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-        
-      </div>
-    </ZoneAdminLayout>
+            )}
+          </AnimatePresence>
+
+          {/* DELETE CONFIRMATION MODAL */}
+          <AnimatePresence>
+            {showDeleteModal && vendorToDelete && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4"
+                onClick={(e) => e.target === e.currentTarget && setShowDeleteModal(false)}
+              >
+                <motion.div
+                  initial={{ scale: 0.95, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  exit={{ scale: 0.95, opacity: 0 }}
+                  className="bg-theme-bg-primary rounded-xl shadow-2xl border border-theme-border w-full max-w-md overflow-hidden p-8 text-center"
+                >
+                  <h2 className="text-2xl font-fredoka font-bold text-theme-text-primary mb-3 mt-2">
+                    Delete Vendor?
+                  </h2>
+                  <p className="text-theme-text-secondary font-raleway mb-6">
+                    Are you sure you want to permanently delete <strong>{vendorToDelete.name}</strong>?
+                  </p>
+
+                  <div className="bg-status-danger/10 border border-status-danger/20 rounded-xl p-4 mb-8 text-left flex items-start gap-3">
+                    <FaInfoCircle className="text-status-danger text-lg shrink-0 mt-0.5" />
+                    <p className="text-status-danger text-sm font-medium font-raleway leading-relaxed">
+                      This action is irreversible. It will wipe all menu items, order history, and credentials associated with this vendor.
+                    </p>
+                  </div>
+
+                  <div className="flex gap-4">
+                    <button
+                      onClick={() => {
+                        setShowDeleteModal(false);
+                        setVendorToDelete(null);
+                      }}
+                      className="flex-1 py-2.5 rounded-lg font-bold font-raleway border-2 border-theme-border text-theme-text-secondary hover:bg-theme-bg-secondary hover:text-theme-text-primary transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={confirmDelete}
+                      className="flex-1 py-2.5 rounded-lg font-bold font-raleway bg-red-600 text-white shadow-md hover:bg-red-700 transition-all duration-200">
+                      Delete Vendor
+                    </button>
+                  </div>
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+        </motion.div>
+      </ZoneAdminLayout>
+    </ErrorBoundary>
   );
 };
 

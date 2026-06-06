@@ -1,107 +1,235 @@
-const { catchAsync, APIError } = require('../middleware/errorHandler');
-const { Restaurant, User, Subscription } = require('../models');
+const { APIError } = require('../middleware/errorHandler');
+const catchAsync = require('../utils/catchAsync');
+const { Restaurant, User, Subscription, Order } = require('../models');
+const mongoose = require('mongoose');
 const { logger, loggerUtils } = require('../utils/logger');
 
 /**
- * Get all restaurants (admin only) or user's restaurants
+ * Get all restaurants (admin) or restaurants owned by the current user
  */
 const getAllRestaurants = catchAsync(async (req, res) => {
-  const { page = 1, limit = 10, search, city, state, status } = req.query;
-  const userId = req.user.id;
-  const userRole = req.user.role;
-
-  // Build query
-  const query = {};
+  const { page = 1, limit = 10, ...filters } = req.query;
+  const skip = (page - 1) * limit;
   
-  // Only admins can see all restaurants, others see only their own
-  if (userRole !== 'admin') {
-    query.ownerId = userId;
+  let query = {};
+  
+  // If user is not admin, only return their restaurants
+  if (req.user.role !== 'admin') {
+    query.ownerId = req.user.id;
   }
-
-  // Add filters
-  if (search) {
-    query.$or = [
-      { name: { $regex: search, $options: 'i' } },
-      { description: { $regex: search, $options: 'i' } }
-    ];
+  
+  // Apply filters if any
+  if (filters.status) {
+    query.status = filters.status;
   }
-
-  if (city) {
-    query['contact.address.city'] = { $regex: city, $options: 'i' };
-  }
-
-  if (state) {
-    query['contact.address.state'] = { $regex: state, $options: 'i' };
-  }
-
-  if (status) {
-    query.isActive = status === 'active';
-  }
-
-  // Execute query with pagination
-  const options = {
-    page: parseInt(page),
-    limit: parseInt(limit),
-    sort: { createdAt: -1 },
-    populate: [
-      { path: 'ownerId', select: 'email profile.name' },
-      { path: 'subscriptionId', select: 'planName status features limits' }
-    ]
-  };
-
-  const restaurants = await Restaurant.paginate ? 
-    await Restaurant.paginate(query, options) :
-    await Restaurant.find(query)
-      .populate(options.populate)
-      .sort(options.sort)
-      .limit(options.limit)
-      .skip((options.page - 1) * options.limit);
-
-  loggerUtils.logBusiness('Restaurants retrieved', {
-    userId,
-    userRole,
-    count: Array.isArray(restaurants) ? restaurants.length : restaurants.docs?.length || 0,
-    filters: { search, city, state, status }
+  
+  const [restaurants, total] = await Promise.all([
+    Restaurant.find(query)
+      .populate('ownerId', 'name email phone profile username')
+      .populate('subscriptionId', 'planKey planName planType features limits status expiryDate')
+      .skip(skip)
+      .limit(parseInt(limit))
+      .sort({ createdAt: -1 }),
+    Restaurant.countDocuments(query)
+  ]);
+  
+  // Add login credentials for admin users
+  const restaurantsWithCredentials = restaurants.map(restaurant => {
+    const restaurantObj = restaurant.toObject();
+    
+    // Add login credentials if user is admin
+    if (req.user.role === 'admin' && restaurant.ownerId) {
+      restaurantObj.loginCredentials = {
+        username: restaurant.ownerId.username || restaurant.name.toLowerCase().replace(/\s+/g, '_') + '_restaurant_admin',
+        password: '••••••••', // Don't expose actual password
+        lastLogin: restaurant.ownerId.lastLogin || null
+      };
+    }
+    
+    return restaurantObj;
   });
-
+  
   res.status(200).json({
     success: true,
-    message: 'Restaurants retrieved successfully',
-    data: restaurants
+    count: restaurantsWithCredentials.length,
+    total,
+    page: parseInt(page),
+    pages: Math.ceil(total / limit),
+    data: restaurantsWithCredentials
   });
 });
 
 /**
- * Get single restaurant by ID
+ * Get restaurant by ID
  */
 const getRestaurant = catchAsync(async (req, res) => {
   const { id } = req.params;
   const userId = req.user.id;
   const userRole = req.user.role;
 
-  const restaurant = await Restaurant.findById(id)
-    .populate('ownerId', 'email profile.name')
-    .populate('subscriptionId', 'planName status features limits');
+  let query = { _id: id };
+  
+  // Non-admin users can only access their own restaurants
+  if (userRole !== 'admin') {
+    query.ownerId = userId;
+  }
+
+  const restaurant = await Restaurant.findOne(query)
+    .populate('ownerId', 'name email phone profile')
+    .populate('subscriptionId', 'planKey planName planType features limits status expiryDate');
+
+  if (!restaurant) {
+    throw new APIError('Restaurant not found or access denied', 404);
+  }
+
+  // Sync subscription plan with actual subscription data
+  if (restaurant.subscriptionId) {
+    const subscription = restaurant.subscriptionId;
+    let subscriptionPlan = 'free'; // default
+    
+    if (subscription && subscription.planKey) {
+      // Map subscription planKey to restaurant subscriptionPlan
+      switch (subscription.planKey) {
+        case 'restaurant_enterprise':
+        case 'restaurant_premium':
+          subscriptionPlan = 'premium';
+          break;
+        case 'restaurant_professional':
+        case 'restaurant_advanced':
+          subscriptionPlan = 'advanced';
+          break;
+        case 'restaurant_starter':
+        case 'restaurant_basic':
+          subscriptionPlan = 'basic';
+          break;
+        case 'restaurant_free':
+        case 'free_plan':
+        default:
+          subscriptionPlan = 'free';
+          break;
+      }
+      
+      // Update restaurant if subscription plan is out of sync
+      if (restaurant.subscriptionPlan !== subscriptionPlan) {
+        restaurant.subscriptionPlan = subscriptionPlan;
+        await restaurant.save();
+        
+      }
+    }
+  }
+
+  // Fetch related data separately
+  const MenuCategory = require('../models/MenuCategory');
+  const MenuItem = require('../models/MenuItem');
+
+  // Get menu categories for this restaurant
+  const menuCategories = await MenuCategory.find({
+    restaurantId: restaurant._id,
+    active: true
+  }).sort('sortOrder');
+
+  // Get menu items count
+  const menuItemsCount = await MenuItem.countDocuments({
+    restaurantId: restaurant._id
+  });
+
+  // Add related data to restaurant object
+  const restaurantData = {
+    ...restaurant.toObject(),
+    menuCategories,
+    menuItemsCount,
+    tablesCount: 0 // Will be populated from QR/table management
+  };
+
+  res.status(200).json({
+    success: true,
+    data: restaurantData
+  });
+});
+
+/**
+ * Get restaurant by slug
+ */
+const getRestaurantBySlug = catchAsync(async (req, res) => {
+  const { slug } = req.params;
+
+  const restaurant = await Restaurant.findOne({ slug: slug, status: 'active' })
+    .populate('ownerId', 'name email phone profile')
+    .populate('subscriptionId', 'planKey planName planType features limits status expiryDate');
 
   if (!restaurant) {
     throw new APIError('Restaurant not found', 404);
   }
 
-  // Check ownership (except for admins)
-  if (userRole !== 'admin' && restaurant.ownerId._id.toString() !== userId) {
-    throw new APIError('Access denied', 403);
-  }
+  // Fetch related data separately
+  const MenuCategory = require('../models/MenuCategory');
+  const MenuItem = require('../models/MenuItem');
 
-  loggerUtils.logBusiness('Restaurant retrieved', {
-    userId,
-    restaurantId: id,
-    restaurantName: restaurant.name
+  // Get menu categories for this restaurant
+  const menuCategories = await MenuCategory.find({
+    restaurantId: restaurant._id,
+    active: true
+  }).sort('sortOrder');
+
+  // Get menu items count
+  const menuItemsCount = await MenuItem.countDocuments({
+    restaurantId: restaurant._id
   });
+
+  // Add related data to restaurant object
+  const restaurantData = {
+    ...restaurant.toObject(),
+    menuCategories,
+    menuItemsCount,
+    tablesCount: 0 // Will be populated from QR/table management
+  };
 
   res.status(200).json({
     success: true,
-    message: 'Restaurant retrieved successfully',
-    data: restaurant
+    data: restaurantData
+  });
+});
+
+/**
+ * Get restaurant by ID (public access for checkout)
+ */
+const getRestaurantByIdPublic = catchAsync(async (req, res) => {
+  const { id } = req.params;
+
+  const restaurant = await Restaurant.findOne({ _id: id, status: 'active' })
+    .populate('ownerId', 'name email phone profile')
+    .populate('subscriptionId', 'planKey planName planType features limits status expiryDate');
+
+  if (!restaurant) {
+    throw new APIError('Restaurant not found', 404);
+  }
+
+  // Fetch related data separately
+  const MenuCategory = require('../models/MenuCategory');
+  const MenuItem = require('../models/MenuItem');
+
+  // Get menu categories for this restaurant
+  const menuCategories = await MenuCategory.find({
+    restaurantId: restaurant._id,
+    active: true
+  }).sort('sortOrder');
+
+  // Get menu items count
+  const menuItemsCount = await MenuItem.countDocuments({
+    restaurantId: restaurant._id
+  });
+
+  // Add related data to restaurant object
+  const restaurantData = {
+    ...restaurant.toObject(),
+    menuCategories,
+    menuItemsCount,
+    tablesCount: 0 // Will be populated from QR/table management
+  };
+
+  res.status(200).json({
+    success: true,
+    data: restaurantData
   });
 });
 
@@ -109,281 +237,144 @@ const getRestaurant = catchAsync(async (req, res) => {
  * Create new restaurant
  */
 const createRestaurant = catchAsync(async (req, res) => {
-  const userId = req.user.id;
-  const userRole = req.user.role;
-
-  // Get user's subscription to check limits
-  const user = await User.findById(userId).populate('subscription');
-  if (!user || !user.subscription) {
-    throw new APIError('User subscription not found', 400);
-  }
-
-  const subscription = user.subscription;
-
-  // Check if user can create restaurants based on role
-  if (!['admin', 'restaurant_owner'].includes(userRole)) {
-    throw new APIError('Only restaurant owners can create restaurants', 403);
-  }
-
-  // Check subscription limits (except for unlimited plans)
-  if (!subscription.features.unlimited && userRole !== 'admin') {
-    const userRestaurantCount = await Restaurant.countDocuments({ ownerId: userId, isActive: true });
-    const maxRestaurants = subscription.limits.maxTables > 0 ? 1 : 0; // For now, assuming 1 restaurant per subscription
-    
-    if (userRestaurantCount >= maxRestaurants) {
-      throw new APIError('Restaurant limit reached for your subscription plan', 403);
-    }
-  }
-
-  // Validate required fields
-  const { name, contact, description, hours, settings } = req.body;
+  const { name, description, address, contact, openingHours, subscriptionId } = req.body;
   
-  if (!name || !contact?.address || !contact?.phone) {
-    throw new APIError('Name, address, and phone are required', 400);
+  // Validate required fields
+  if (!name || !name.trim()) {
+    throw new APIError('Restaurant name is required', 400);
   }
-
-  // Create restaurant
-  const restaurantData = {
-    ...req.body,
-    ownerId: userId,
-    subscriptionId: user.subscription._id,
-    createdBy: userId
-  };
-
-  const restaurant = new Restaurant(restaurantData);
-  const savedRestaurant = await restaurant.save();
-
-  // Populate references
-  await savedRestaurant.populate([
-    { path: 'ownerId', select: 'email profile.name' },
-    { path: 'subscriptionId', select: 'planName status features limits' }
-  ]);
-
-  loggerUtils.logBusiness('Restaurant created', {
-    userId,
-    restaurantId: savedRestaurant._id,
-    restaurantName: savedRestaurant.name
-  });
-
-  res.status(201).json({
-    success: true,
-    message: 'Restaurant created successfully',
-    data: savedRestaurant
-  });
-});
-
-/**
- * Update restaurant
- */
-const updateRestaurant = catchAsync(async (req, res) => {
-  const { id } = req.params;
-  const userId = req.user.id;
-  const userRole = req.user.role;
-
-  const restaurant = await Restaurant.findById(id);
-  if (!restaurant) {
-    throw new APIError('Restaurant not found', 404);
-  }
-
-  // Check ownership (except for admins)
-  if (userRole !== 'admin' && restaurant.ownerId.toString() !== userId) {
-    throw new APIError('Access denied', 403);
-  }
-
-  // Update restaurant
-  const updateData = {
-    ...req.body,
-    updatedBy: userId
-  };
-
-  // Remove fields that shouldn't be updated via this endpoint
-  delete updateData.ownerId;
-  delete updateData.subscriptionId;
-  delete updateData.createdBy;
-  delete updateData.createdAt;
-
-  const updatedRestaurant = await Restaurant.findByIdAndUpdate(
-    id,
-    updateData,
-    { new: true, runValidators: true }
-  ).populate([
-    { path: 'ownerId', select: 'email profile.name' },
-    { path: 'subscriptionId', select: 'planName status features limits' }
-  ]);
-
-  loggerUtils.logBusiness('Restaurant updated', {
-    userId,
-    restaurantId: id,
-    restaurantName: updatedRestaurant.name,
-    updatedFields: Object.keys(req.body)
-  });
-
-  res.status(200).json({
-    success: true,
-    message: 'Restaurant updated successfully',
-    data: updatedRestaurant
-  });
-});
-
-/**
- * Delete restaurant
- */
-const deleteRestaurant = catchAsync(async (req, res) => {
-  const { id } = req.params;
-  const userId = req.user.id;
-  const userRole = req.user.role;
-
-  const restaurant = await Restaurant.findById(id);
-  if (!restaurant) {
-    throw new APIError('Restaurant not found', 404);
-  }
-
-  // Check ownership (except for admins)
-  if (userRole !== 'admin' && restaurant.ownerId.toString() !== userId) {
-    throw new APIError('Access denied', 403);
-  }
-
-  // Soft delete by setting isActive to false
-  restaurant.isActive = false;
-  restaurant.updatedBy = userId;
-  await restaurant.save();
-
-  loggerUtils.logBusiness('Restaurant deleted', {
-    userId,
-    restaurantId: id,
-    restaurantName: restaurant.name
-  });
-
-  res.status(200).json({
-    success: true,
-    message: 'Restaurant deleted successfully'
-  });
-});
-
-/**
- * Add table to restaurant
- */
-const addTable = catchAsync(async (req, res) => {
-  const { id } = req.params;
-  const userId = req.user.id;
-  const userRole = req.user.role;
-
-  const restaurant = await Restaurant.findById(id).populate('subscriptionId');
-  if (!restaurant) {
-    throw new APIError('Restaurant not found', 404);
-  }
-
-  // Check ownership
-  if (userRole !== 'admin' && restaurant.ownerId.toString() !== userId) {
-    throw new APIError('Access denied', 403);
-  }
-
-  // Check subscription limits
-  const subscription = restaurant.subscriptionId;
-  if (!subscription.features.unlimited && userRole !== 'admin') {
-    if (restaurant.activeTablesCount >= subscription.limits.maxTables) {
-      throw new APIError('Table limit reached for your subscription plan', 403);
+  
+  const userId = req.user.role === 'admin' ? req.body.ownerId || req.user.id : req.user.id;
+  
+  // Check if user already has a restaurant (if not admin creating for someone else)
+  if (req.user.role !== 'admin' || !req.body.ownerId) {
+    const existingRestaurant = await Restaurant.findOne({ ownerId: userId });
+    if (existingRestaurant) {
+      throw new APIError('You already have a restaurant', 400);
     }
   }
+  
+  // If admin is creating for someone else, check if that user already has a restaurant
+  if (req.user.role === 'admin' && req.body.ownerId) {
+    const existingRestaurant = await Restaurant.findOne({ ownerId: req.body.ownerId });
+    if (existingRestaurant) {
+      throw new APIError(`User already has a restaurant: ${existingRestaurant.name}`, 409);
+    }
+  }
+  
+  // Validate subscription if provided, or create a free one if not
+  let validatedSubscriptionId = subscriptionId;
+  const Subscription = require('../models/Subscription');
 
-  // Add table
-  const tableData = {
-    ...req.body,
-    number: req.body.number || (restaurant.tables.length + 1).toString()
-  };
+  if (subscriptionId) {
+    const subscription = await Subscription.findById(subscriptionId);
+    if (!subscription) {
+      throw new APIError('Invalid subscription ID', 400);
+    }
+    if (subscription.status !== 'active') {
+      throw new APIError('Subscription must be active', 400);
+    }
+  } else {
+    // Create a free subscription for the restaurant if none provided
+    const freeSubscription = new Subscription({
+      userId: userId,
+      planKey: 'restaurant_free',
+      planType: 'restaurant',
+      planName: 'Free Starter',
+      features: {
+        crudMenu: true,
+        qrGeneration: true,
+        vendorManagement: false,
+        analytics: false,
+        qrCustomization: false,
+        modifiers: false,
+        watermark: true,
+        unlimited: false,
+        multiLocation: false,
+        advancedReporting: false,
+        apiAccess: false,
+        whiteLabel: false,
+        prioritySupport: false,
+        customBranding: false
+      },
+      limits: {
+        maxTables: 1,
+        maxShops: 0,
+        maxVendors: 0,
+        maxCategories: 1,
+        maxMenuItems: 2,
+        maxUsers: 1,
+        maxOrdersPerMonth: 50,
+        maxStorageGB: 1
+      },
+      pricing: {
+        amount: 0,
+        currency: 'INR',
+        interval: 'monthly',
+        trialDays: 0
+      },
+      status: 'active',
+      startDate: new Date(),
+      endDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // 1 year
+      usage: {
+        currentTables: 0,
+        currentShops: 0,
+        currentVendors: 0,
+        currentCategories: 0,
+        currentMenuItems: 0,
+        currentUsers: 1,
+        ordersThisMonth: 0,
+        storageUsedGB: 0,
+        lastUsageUpdate: new Date()
+      },
+      payment: {
+        paymentHistory: []
+      },
+      notes: []
+    });
 
-  await restaurant.addTable(tableData);
+    await freeSubscription.save();
+    validatedSubscriptionId = freeSubscription._id;
 
-  loggerUtils.logBusiness('Table added', {
-    userId,
-    restaurantId: id,
-    tableNumber: tableData.number
-  });
+    // Update user's plan status to active
+    await User.findByIdAndUpdate(userId, {
+      planStatus: 'active',
+      planExpiryDate: freeSubscription.endDate
+    });
 
-  res.status(201).json({
-    success: true,
-    message: 'Table added successfully',
-    data: restaurant.tables[restaurant.tables.length - 1]
-  });
+  }
+  
+  try {
+    const restaurant = await Restaurant.create({
+      name: name.trim(),
+      description: description?.trim(),
+      address,
+      contact,
+      openingHours,
+      ownerId: userId,
+      subscriptionId: validatedSubscriptionId,
+      status: 'active'
+    });
+    
+    res.status(201).json({
+      success: true,
+      data: restaurant
+    });
+  } catch (error) {
+    // Handle duplicate key errors specifically
+    if (error.code === 11000) {
+      const duplicateField = Object.keys(error.keyPattern)[0];
+      if (duplicateField === 'slug') {
+        throw new APIError('A restaurant with this name already exists', 409);
+      }
+      throw new APIError(`Restaurant with this ${duplicateField} already exists`, 409);
+    }
+    
+    // Re-throw other errors
+    throw error;
+  }
 });
 
-/**
- * Update table
- */
-const updateTable = catchAsync(async (req, res) => {
-  const { id, tableId } = req.params;
-  const userId = req.user.id;
-  const userRole = req.user.role;
-
-  const restaurant = await Restaurant.findById(id);
-  if (!restaurant) {
-    throw new APIError('Restaurant not found', 404);
-  }
-
-  // Check ownership
-  if (userRole !== 'admin' && restaurant.ownerId.toString() !== userId) {
-    throw new APIError('Access denied', 403);
-  }
-
-  // Update table
-  await restaurant.updateTable(tableId, req.body);
-
-  const updatedTable = restaurant.tables.id(tableId);
-
-  loggerUtils.logBusiness('Table updated', {
-    userId,
-    restaurantId: id,
-    tableId,
-    tableNumber: updatedTable.number
-  });
-
-  res.status(200).json({
-    success: true,
-    message: 'Table updated successfully',
-    data: updatedTable
-  });
-});
-
-/**
- * Remove table
- */
-const removeTable = catchAsync(async (req, res) => {
-  const { id, tableId } = req.params;
-  const userId = req.user.id;
-  const userRole = req.user.role;
-
-  const restaurant = await Restaurant.findById(id);
-  if (!restaurant) {
-    throw new APIError('Restaurant not found', 404);
-  }
-
-  // Check ownership
-  if (userRole !== 'admin' && restaurant.ownerId.toString() !== userId) {
-    throw new APIError('Access denied', 403);
-  }
-
-  const table = restaurant.tables.id(tableId);
-  if (!table) {
-    throw new APIError('Table not found', 404);
-  }
-
-  const tableNumber = table.number;
-
-  // Remove table
-  await restaurant.removeTable(tableId);
-
-  loggerUtils.logBusiness('Table removed', {
-    userId,
-    restaurantId: id,
-    tableId,
-    tableNumber
-  });
-
-  res.status(200).json({
-    success: true,
-    message: 'Table removed successfully'
-  });
-});
 
 /**
  * Get restaurant statistics
@@ -398,12 +389,32 @@ const getRestaurantStats = catchAsync(async (req, res) => {
     throw new APIError('Restaurant not found', 404);
   }
 
-  // Check ownership
   if (userRole !== 'admin' && restaurant.ownerId.toString() !== userId) {
     throw new APIError('Access denied', 403);
   }
 
-  // Get order statistics (placeholder - will be implemented when Order endpoints are ready)
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startOfWeek = new Date(now.setDate(now.getDate() - now.getDay()));
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+  const ordersToday = await Order.countDocuments({ restaurantId: id, createdAt: { $gte: today } });
+  const ordersThisWeek = await Order.countDocuments({ restaurantId: id, createdAt: { $gte: startOfWeek } });
+  const ordersThisMonth = await Order.countDocuments({ restaurantId: id, createdAt: { $gte: startOfMonth } });
+
+  const revenueTodayResult = await Order.aggregate([
+    { $match: { restaurantId: mongoose.Types.ObjectId(id), createdAt: { $gte: today } } },
+    { $group: { _id: null, total: { $sum: '$totalAmount' } } }
+  ]);
+  const revenueThisWeekResult = await Order.aggregate([
+    { $match: { restaurantId: mongoose.Types.ObjectId(id), createdAt: { $gte: startOfWeek } } },
+    { $group: { _id: null, total: { $sum: '$totalAmount' } } }
+  ]);
+  const revenueThisMonthResult = await Order.aggregate([
+    { $match: { restaurantId: mongoose.Types.ObjectId(id), createdAt: { $gte: startOfMonth } } },
+    { $group: { _id: null, total: { $sum: '$totalAmount' } } }
+  ]);
+
   const stats = {
     restaurant: {
       name: restaurant.name,
@@ -412,15 +423,15 @@ const getRestaurantStats = catchAsync(async (req, res) => {
       ...restaurant.stats
     },
     orders: {
-      today: 0, // TODO: Implement with Order model
-      thisWeek: 0,
-      thisMonth: 0,
+      today: ordersToday,
+      thisWeek: ordersThisWeek,
+      thisMonth: ordersThisMonth,
       total: restaurant.stats.totalOrders
     },
     revenue: {
-      today: 0, // TODO: Implement with Order model
-      thisWeek: 0,
-      thisMonth: 0,
+      today: revenueTodayResult.length > 0 ? revenueTodayResult[0].total : 0,
+      thisWeek: revenueThisWeekResult.length > 0 ? revenueThisWeekResult[0].total : 0,
+      thisMonth: revenueThisMonthResult.length > 0 ? revenueThisMonthResult[0].total : 0,
       total: restaurant.stats.totalRevenue
     }
   };
@@ -437,9 +448,302 @@ const getRestaurantStats = catchAsync(async (req, res) => {
   });
 });
 
-/**
- * Toggle restaurant status (active/inactive)
- */
+
+const updateRestaurant = catchAsync(async (req, res) => {
+  const { id } = req.params;
+  const updates = req.body;
+  const userId = req.user.id;
+  const userRole = req.user.role;
+
+  console.log('🔧 Update Restaurant Request:', {
+    restaurantId: id,
+    userId,
+    userRole,
+    originalUpdateFields: Object.keys(updates),
+    updateData: updates
+  });
+
+  // Find the restaurant first to check ownership
+  const restaurant = await Restaurant.findById(id).populate('subscriptionId');
+  if (!restaurant) {
+    throw new APIError('Restaurant not found', 404);
+  }
+
+  // Check if user has permission to update this restaurant
+  if (userRole !== 'admin' && restaurant.ownerId.toString() !== userId) {
+    throw new APIError('Not authorized to update this restaurant', 403);
+  }
+
+  // Create a clean updates object without sensitive fields
+  const sanitizedUpdates = { ...updates };
+  
+  // Remove fields that restaurant owners shouldn't be able to change
+  if (userRole !== 'admin') {
+    delete sanitizedUpdates.ownerId;
+    delete sanitizedUpdates.subscriptionId;
+    delete sanitizedUpdates.createdAt;
+    delete sanitizedUpdates.updatedAt;
+    delete sanitizedUpdates._id;
+    delete sanitizedUpdates.id;
+    delete sanitizedUpdates.__v;
+    // Remove any nested owner references
+    if (sanitizedUpdates.owner) {
+      delete sanitizedUpdates.owner;
+    }
+  }
+
+  // Handle logo image - save only in media.images array
+  if (sanitizedUpdates.logo) {
+    // Get existing restaurant data to merge with current media
+    const existingMedia = restaurant.media || { images: [] };
+    const existingImages = existingMedia.images || [];
+    
+    // Prepare logo image for media.images array
+    const logoImageData = {
+      url: sanitizedUpdates.logo,
+      caption: 'Restaurant Logo',
+      isPrimary: true,
+      imageType: 'logo',
+      order: 0
+    };
+    
+    // Update or add logo in images array
+    const logoIndex = existingImages.findIndex(img => img.imageType === 'logo');
+    let updatedImages;
+    
+    if (logoIndex >= 0) {
+      // Update existing logo
+      updatedImages = [...existingImages];
+      updatedImages[logoIndex] = logoImageData;
+    } else {
+      // Add new logo at the beginning
+      updatedImages = [logoImageData, ...existingImages];
+    }
+    
+    // Create complete media object - only images array
+    sanitizedUpdates.media = {
+      ...existingMedia,
+      images: updatedImages
+    };
+    
+    // Remove the logo field - we only store in media.images
+    delete sanitizedUpdates.logo;
+    
+  }
+
+  // Handle contact information mapping
+  if (sanitizedUpdates.contact) {
+    // If contact structure is provided, sync flat fields for frontend compatibility
+    if (sanitizedUpdates.contact.phone) {
+      sanitizedUpdates.ownerPhone = sanitizedUpdates.contact.phone;
+    }
+    if (sanitizedUpdates.contact.email) {
+      sanitizedUpdates.ownerEmail = sanitizedUpdates.contact.email;
+    }
+    if (sanitizedUpdates.contact.address) {
+      if (sanitizedUpdates.contact.address.street) {
+        sanitizedUpdates.address = sanitizedUpdates.contact.address.street;
+      }
+      if (sanitizedUpdates.contact.address.city) {
+        sanitizedUpdates.city = sanitizedUpdates.contact.address.city;
+      }
+      if (sanitizedUpdates.contact.address.state) {
+        sanitizedUpdates.state = sanitizedUpdates.contact.address.state;
+      }
+      if (sanitizedUpdates.contact.address.zipCode) {
+        sanitizedUpdates.zipCode = sanitizedUpdates.contact.address.zipCode;
+      }
+    }
+    
+  } else if (sanitizedUpdates.ownerPhone || sanitizedUpdates.ownerEmail || sanitizedUpdates.address) {
+    // If flat fields are provided, create/update contact structure
+    const existingContact = restaurant.contact || {};
+    const existingAddress = existingContact.address || {};
+    
+    sanitizedUpdates.contact = {
+      ...existingContact,
+      phone: sanitizedUpdates.ownerPhone || existingContact.phone,
+      email: sanitizedUpdates.ownerEmail || existingContact.email,
+      address: {
+        ...existingAddress,
+        street: sanitizedUpdates.address || existingAddress.street,
+        city: sanitizedUpdates.city || existingAddress.city,
+        state: sanitizedUpdates.state || existingAddress.state,
+        zipCode: sanitizedUpdates.zipCode || existingAddress.zipCode,
+        country: existingAddress.country || 'IN'
+      }
+    };
+    
+  }
+
+  // Sync subscription plan with actual subscription
+  if (restaurant.subscriptionId) {
+    const subscription = restaurant.subscriptionId;
+    let subscriptionPlan = 'free'; // default
+    
+    if (subscription && subscription.planKey) {
+      // Map subscription planKey to restaurant subscriptionPlan
+      switch (subscription.planKey) {
+        case 'restaurant_enterprise':
+        case 'restaurant_premium':
+          subscriptionPlan = 'premium';
+          break;
+        case 'restaurant_professional':
+        case 'restaurant_advanced':
+          subscriptionPlan = 'advanced';
+          break;
+        case 'restaurant_starter':
+        case 'restaurant_basic':
+          subscriptionPlan = 'basic';
+          break;
+        case 'restaurant_free':
+        case 'free_plan':
+        default:
+          subscriptionPlan = 'free';
+          break;
+      }
+      
+      // Update the subscription plan to keep it in sync
+      sanitizedUpdates.subscriptionPlan = subscriptionPlan;
+      
+    }
+  }
+
+  console.log('🧹 After Sanitization:', {
+    restaurantId: id,
+    userId,
+    userRole,
+    originalFields: Object.keys(updates),
+    sanitizedFields: Object.keys(sanitizedUpdates),
+    removedFields: Object.keys(updates).filter(key => !Object.keys(sanitizedUpdates).includes(key)),
+    containsOwnerId: 'ownerId' in sanitizedUpdates,
+    logoField: sanitizedUpdates.logo ? 'present' : 'absent',
+    subscriptionPlan: sanitizedUpdates.subscriptionPlan,
+    mediaStructure: sanitizedUpdates.media ? {
+      hasLogo: !!sanitizedUpdates.media.logo,
+      imagesCount: sanitizedUpdates.media.images?.length || 0
+    } : 'none'
+  });
+
+  // Double-check: Prevent changing ownerId unless admin
+  if (sanitizedUpdates.ownerId && userRole !== 'admin') {
+    logger.error('🚨 CRITICAL: ownerId still present after sanitization!', {
+      sanitizedUpdates,
+      userRole
+    });
+    throw new APIError('Only admins can change restaurant ownership', 403);
+  }
+
+  // Update the restaurant with proper error handling
+  try {
+    const updatedRestaurant = await Restaurant.findByIdAndUpdate(
+      id,
+      { $set: sanitizedUpdates },
+      { 
+        new: true, 
+        runValidators: true,
+        validateModifiedOnly: true
+      }
+    ).populate('subscriptionId', 'planKey planName planType status');
+
+    if (!updatedRestaurant) {
+      throw new APIError('Restaurant not found after update', 404);
+    }
+
+    console.log('✅ Restaurant updated successfully:', {
+      restaurantId: id,
+      updatedFields: Object.keys(sanitizedUpdates),
+      mediaImagesCount: updatedRestaurant.media?.images?.length || 0,
+      hasLogo: !!updatedRestaurant.media?.images?.find(img => img.imageType === 'logo'),
+      logoUrl: updatedRestaurant.media?.images?.find(img => img.imageType === 'logo')?.url || 'None',
+      subscriptionPlan: updatedRestaurant.subscriptionPlan
+    });
+
+    res.status(200).json({
+      success: true,
+      data: updatedRestaurant
+    });
+  } catch (validationError) {
+    logger.error('🚨 Database validation error:', {
+      restaurantId: id,
+      error: validationError.message,
+      errors: validationError.errors
+    });
+    
+    // Handle specific validation errors
+    if (validationError.name === 'ValidationError') {
+      const errors = Object.values(validationError.errors).map(err => err.message);
+      throw new APIError(`Validation failed: ${errors.join(', ')}`, 400);
+    }
+    
+    // Handle duplicate key errors
+    if (validationError.code === 11000) {
+      const field = Object.keys(validationError.keyPattern)[0];
+      throw new APIError(`Duplicate value for ${field}`, 409);
+    }
+    
+    // Handle MongoDB path conflicts
+    if (validationError.message && validationError.message.includes('would create a conflict')) {
+      logger.error('🚨 MongoDB path conflict detected:', validationError.message);
+      throw new APIError('Database update conflict - please try again', 409);
+    }
+    
+    throw new APIError('Database operation failed', 500);
+  }
+});
+
+// Delete a restaurant
+const deleteRestaurant = catchAsync(async (req, res) => {
+  const { id } = req.params;
+  const { permanent = false } = req.query;
+  const userId = req.user.id;
+  const userRole = req.user.role;
+
+  const restaurant = await Restaurant.findById(id);
+  if (!restaurant) {
+    throw new APIError('Restaurant not found', 404);
+  }
+
+  // Check if user has permission to delete this restaurant
+  if (userRole !== 'admin' && restaurant.ownerId.toString() !== userId) {
+    throw new APIError('Not authorized to delete this restaurant', 403);
+  }
+
+  if (permanent === 'true') {
+    // Permanent deletion - also delete user and subscription
+    const User = require('../models/User');
+    const Subscription = require('../models/Subscription');
+    
+    // Delete the user account if exists
+    if (restaurant.ownerId) {
+      await User.findByIdAndDelete(restaurant.ownerId);
+    }
+    
+    // Delete the subscription if exists
+    if (restaurant.subscriptionId) {
+      await Subscription.findByIdAndDelete(restaurant.subscriptionId);
+    }
+    
+    // Finally delete the restaurant itself
+    await Restaurant.findByIdAndDelete(id);
+    
+    res.status(200).json({
+      success: true,
+      message: 'Restaurant and all related data permanently deleted'
+    });
+  } else {
+    // Soft delete by setting status to 'deleted' instead of actually removing
+    restaurant.status = 'deleted';
+    await restaurant.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Restaurant deleted successfully'
+    });
+  }
+});
+
+// Toggle restaurant status (active/inactive)
 const toggleRestaurantStatus = catchAsync(async (req, res) => {
   const { id } = req.params;
   const userId = req.user.id;
@@ -450,79 +754,236 @@ const toggleRestaurantStatus = catchAsync(async (req, res) => {
     throw new APIError('Restaurant not found', 404);
   }
 
-  // Check ownership
+  // Check if user has permission to update this restaurant
   if (userRole !== 'admin' && restaurant.ownerId.toString() !== userId) {
-    throw new APIError('Access denied', 403);
+    throw new APIError('Not authorized to update this restaurant', 403);
   }
 
   // Toggle status
-  restaurant.isActive = !restaurant.isActive;
-  restaurant.updatedBy = userId;
+  restaurant.status = restaurant.status === 'active' ? 'inactive' : 'active';
   await restaurant.save();
-
-  loggerUtils.logBusiness('Restaurant status toggled', {
-    userId,
-    restaurantId: id,
-    newStatus: restaurant.isActive ? 'active' : 'inactive'
-  });
 
   res.status(200).json({
     success: true,
-    message: `Restaurant ${restaurant.isActive ? 'activated' : 'deactivated'} successfully`,
     data: {
       id: restaurant._id,
-      name: restaurant.name,
-      isActive: restaurant.isActive
-    }
+      status: restaurant.status,
+      name: restaurant.name
+    },
+    message: `Restaurant ${restaurant.status === 'active' ? 'activated' : 'deactivated'} successfully`
   });
 });
 
-/**
- * Get restaurant by slug (public endpoint)
- */
-const getRestaurantBySlug = catchAsync(async (req, res) => {
-  const { slug } = req.params;
+// Add a table to a restaurant
+const addTable = catchAsync(async (req, res) => {
+  const { id } = req.params;
+  const { number, capacity, description, status = 'available' } = req.body;
+  const userId = req.user.id;
+  const userRole = req.user.role;
 
-  const restaurant = await Restaurant.findOne({ 
-    slug, 
-    isActive: true, 
-    isPublished: true 
-  }).populate('ownerId', 'profile.name');
-
+  const restaurant = await Restaurant.findById(id);
   if (!restaurant) {
     throw new APIError('Restaurant not found', 404);
   }
 
-  // Increment menu views
-  restaurant.stats.menuViews += 1;
+  // Check if user has permission to update this restaurant
+  if (userRole !== 'admin' && restaurant.ownerId.toString() !== userId) {
+    throw new APIError('Not authorized to update this restaurant', 403);
+  }
+
+  // Check if table number already exists
+  const tableExists = restaurant.tables.some(t => t.number === number);
+  if (tableExists) {
+    throw new APIError('Table with this number already exists', 400);
+  }
+
+  // Add the new table
+  const newTable = {
+    number,
+    capacity,
+    description,
+    status,
+    qrCode: `R${id}T${number}` // Simple QR code format, can be enhanced
+  };
+
+  restaurant.tables.push(newTable);
   await restaurant.save();
 
-  // Don't include sensitive information in public response
-  const publicData = {
-    id: restaurant._id,
-    name: restaurant.name,
-    description: restaurant.description,
-    slug: restaurant.slug,
-    contact: {
-      address: restaurant.contact.address,
-      phone: restaurant.contact.phone,
-      website: restaurant.contact.website
-    },
-    media: restaurant.media,
-    hours: restaurant.hours,
-    settings: {
-      theme: restaurant.settings.theme,
-      display: restaurant.settings.display,
-      socialMedia: restaurant.settings.socialMedia
-    },
-    isCurrentlyOpen: restaurant.isCurrentlyOpen,
-    menuUrl: restaurant.menuUrl
+  res.status(201).json({
+    success: true,
+    data: newTable,
+    message: 'Table added successfully'
+  });
+});
+
+// Update a table in a restaurant
+const updateTable = catchAsync(async (req, res) => {
+  const { id, tableId } = req.params;
+  const updates = req.body;
+  const userId = req.user.id;
+  const userRole = req.user.role;
+
+  const restaurant = await Restaurant.findById(id);
+  if (!restaurant) {
+    throw new APIError('Restaurant not found', 404);
+  }
+
+  // Check if user has permission to update this restaurant
+  if (userRole !== 'admin' && restaurant.ownerId.toString() !== userId) {
+    throw new APIError('Not authorized to update this restaurant', 403);
+  }
+
+  // Find the table
+  const tableIndex = restaurant.tables.findIndex(t => t._id.toString() === tableId);
+  if (tableIndex === -1) {
+    throw new APIError('Table not found', 404);
+  }
+
+  // Update the table
+  restaurant.tables[tableIndex] = {
+    ...restaurant.tables[tableIndex].toObject(),
+    ...updates,
+    updatedAt: new Date()
   };
+
+  await restaurant.save();
 
   res.status(200).json({
     success: true,
-    message: 'Restaurant retrieved successfully',
-    data: publicData
+    data: restaurant.tables[tableIndex],
+    message: 'Table updated successfully'
+  });
+});
+
+// Remove a table from a restaurant
+const removeTable = catchAsync(async (req, res) => {
+  const { id, tableId } = req.params;
+  const userId = req.user.id;
+  const userRole = req.user.role;
+
+  const restaurant = await Restaurant.findById(id);
+  if (!restaurant) {
+    throw new APIError('Restaurant not found', 404);
+  }
+
+  // Check if user has permission to update this restaurant
+  if (userRole !== 'admin' && restaurant.ownerId.toString() !== userId) {
+    throw new APIError('Not authorized to update this restaurant', 403);
+  }
+
+  // Find the table
+  const tableIndex = restaurant.tables.findIndex(t => t._id.toString() === tableId);
+  if (tableIndex === -1) {
+    throw new APIError('Table not found', 404);
+  }
+
+  // Remove the table
+  restaurant.tables.splice(tableIndex, 1);
+  await restaurant.save();
+
+  res.status(200).json({
+    success: true,
+    message: 'Table removed successfully'
+  });
+});
+
+/**
+ * Update restaurant owner credentials (admin only)
+ */
+const updateRestaurantCredentials = catchAsync(async (req, res) => {
+  const { id } = req.params;
+  const { loginCredentials } = req.body;
+  
+  // Only admin can update credentials
+  if (req.user.role !== 'admin') {
+    throw new APIError('Only administrators can update credentials', 403);
+  }
+  
+  const restaurant = await Restaurant.findById(id).populate('ownerId');
+  if (!restaurant) {
+    throw new APIError('Restaurant not found', 404);
+  }
+  
+  const user = await User.findById(restaurant.ownerId._id);
+  if (!user) {
+    throw new APIError('Restaurant owner not found', 404);
+  }
+  
+  // Update credentials
+  if (loginCredentials.username) {
+    user.username = loginCredentials.username;
+  }
+  
+  if (loginCredentials.password) {
+    const bcrypt = require('bcrypt');
+    user.passwordHash = await bcrypt.hash(loginCredentials.password, 12);
+  }
+  
+  await user.save();
+  
+  res.status(200).json({
+    success: true,
+    message: 'Restaurant credentials updated successfully'
+  });
+});
+
+/**
+ * Update restaurant owner password
+ */
+const updateRestaurantPassword = catchAsync(async (req, res) => {
+  const { id } = req.params;
+  const { newPassword } = req.body;
+  const userId = req.user.id;
+  const userRole = req.user.role;
+
+  // Validate input
+  if (!newPassword) {
+    throw new APIError('New password is required', 400);
+  }
+
+  // Validate password strength
+  const { validatePassword } = require('../utils/passwordUtils');
+  const passwordValidation = validatePassword(newPassword);
+  if (!passwordValidation.isValid) {
+    throw new APIError(`Password validation failed: ${passwordValidation.errors.join(', ')}`, 400);
+  }
+
+  // Find the restaurant
+  let query = { _id: id };
+  
+  // Non-admin users can only access their own restaurants
+  if (userRole !== 'admin') {
+    query.ownerId = userId;
+  }
+
+  const restaurant = await Restaurant.findOne(query);
+  if (!restaurant) {
+    throw new APIError('Restaurant not found or access denied', 404);
+  }
+
+  // Find the owner user
+  const ownerUser = await User.findById(restaurant.ownerId);
+  if (!ownerUser) {
+    throw new APIError('Restaurant owner not found', 404);
+  }
+
+  // Hash the new password
+  const { hashPassword } = require('../utils/passwordUtils');
+  const passwordHash = await hashPassword(newPassword);
+
+  // Update the owner's password
+  ownerUser.passwordHash = passwordHash;
+  await ownerUser.save();
+
+  loggerUtils.logAuth('Restaurant owner password updated', ownerUser._id, {
+    restaurantId: restaurant._id,
+    updatedBy: userId,
+    updatedByRole: userRole
+  });
+
+  res.status(200).json({
+    success: true,
+    message: 'Restaurant owner password updated successfully'
   });
 });
 
@@ -532,10 +993,13 @@ module.exports = {
   createRestaurant,
   updateRestaurant,
   deleteRestaurant,
+  toggleRestaurantStatus,
   addTable,
   updateTable,
   removeTable,
   getRestaurantStats,
-  toggleRestaurantStatus,
-  getRestaurantBySlug
+  getRestaurantBySlug,
+  getRestaurantByIdPublic,
+  updateRestaurantCredentials,
+  updateRestaurantPassword
 };

@@ -1,12 +1,10 @@
 /* Theme Variables for TableServe Admin Interfaces */
 
-:root {
+:root,
+.dark {
   /* Transition properties for smooth theme switching */
   --theme-transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
 
-/* Dark Theme (Default) */
-.dark {
   /* Background Colors */
   --bg-primary: #0a0a0a;
   --bg-secondary: #121212;
@@ -160,6 +158,7 @@
 .admin-navbar {
   background: var(--navbar-bg);
   border-color: var(--navbar-border);
+  -webkit-backdrop-filter: var(--navbar-backdrop);
   backdrop-filter: var(--navbar-backdrop);
   transition: var(--theme-transition);
 }
@@ -569,4 +568,71 @@
 
 .border-accent {
   border-color: var(--accent-primary);
+}
+
+/* Premium Plan UI Styles */
+.premium-card {
+  background: var(--bg-card);
+  border: 2px solid;
+  border-image: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%) 1;
+  border-radius: 12px;
+  position: relative;
+  overflow: hidden;
+}
+
+.premium-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(99, 102, 241, 0.1) 100%);
+  pointer-events: none;
+}
+
+.premium-badge {
+  background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
+  color: white;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 14px;
+  font-weight: 600;
+  text-transform: capitalize;
+  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
+  transition: var(--theme-transition);
+}
+
+.premium-badge:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(139, 92, 246, 0.4);
+}
+
+.premium-gradient-text {
+  background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  font-weight: 600;
+}
+
+.premium-button {
+  background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 20px;
+  font-weight: 600;
+  transition: var(--theme-transition);
+  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
+}
+
+.premium-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(139, 92, 246, 0.4);
+}
+
+.premium-icon {
+  color: #8b5cf6;
+  filter: drop-shadow(0 2px 4px rgba(139, 92, 246, 0.3));
 }

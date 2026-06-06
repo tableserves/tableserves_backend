@@ -11,8 +11,8 @@
 
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { createSelector } from 'reselect';
-import { zoneAPI } from '../../services/api';
-import LocalStorageService from '../../services/LocalStorageService';
+import { zoneAPI } from '../../shared/api/api';
+import LocalStorageService from '../../shared/storage/LocalStorageService';
 import dataService from '../../services/DataService';
 import vendorService from '../../services/VendorService';
 import logger from '../../services/LoggingService';
@@ -24,13 +24,96 @@ export const fetchRestaurantDetails = createAsyncThunk(
   'entities/fetchRestaurantDetails',
   async ({ restaurantId, zoneId }, { rejectWithValue }) => {
     try {
-      const details = LocalStorageService.getRestaurantDetails({ restaurantId, zoneId });
+      let details = null;
+      
+      if (restaurantId) {
+        // First priority: Try to fetch from DATABASE using ApiService (same approach as LandingScreen)
+        try {
+          // Import ApiService here to avoid circular dependencies
+          const ApiService = (await import('../../shared/api/ApiService')).default;
+          logger.info('Fetching restaurant from database via ApiService', { restaurantId }, 'entitiesSlice');
+          
+          details = await ApiService.getRestaurant(restaurantId);
+          
+          if (details) {
+            logger.info('Successfully fetched restaurant from database', { 
+              restaurantId, 
+              name: details.name,
+              id: details._id || details.id 
+            }, 'entitiesSlice');
+            
+            // Normalize the restaurant data
+            details = {
+              id: details._id || details.id || restaurantId,
+              _id: details._id || details.id || restaurantId,
+              name: details.name,
+              description: details.description || '',
+              logo: details.logo,
+              contactInfo: details.contactInfo,
+              address: details.address,
+              status: details.status,
+              isFromDatabase: true
+            };
+          }
+        } catch (apiError) {
+          logger.warn('ApiService database fetch failed, trying localStorage fallback', apiError, 'entitiesSlice');
+        }
+        
+        // Second priority: Try LocalStorageService only if database fetch failed
+        if (!details) {
+          try {
+            details = await LocalStorageService.getRestaurant(restaurantId);
+            if (details) {
+              logger.info('Found restaurant via LocalStorageService', { restaurantId, name: details?.name }, 'entitiesSlice');
+            }
+          } catch (error) {
+            logger.warn('LocalStorageService failed, trying direct access', error, 'entitiesSlice');
+          }
+        }
+        
+        // Third priority: Try direct localStorage access
+        if (!details) {
+          try {
+            const restaurants = JSON.parse(localStorage.getItem('tableserve_restaurants') || '[]');
+            details = restaurants.find(r => r.id == restaurantId || r._id == restaurantId);
+            if (details) {
+              logger.info('Found restaurant via direct localStorage access', { restaurantId, name: details?.name }, 'entitiesSlice');
+            }
+          } catch (error) {
+            logger.warn('Direct localStorage access failed', error, 'entitiesSlice');
+          }
+        }
+        
+        // Last fallback: Create a temporary restaurant object with enhanced fallback name
+        if (!details) {
+          const fallbackName = `Restaurant ${restaurantId.slice(-6).toUpperCase()}`;
+          details = {
+            id: restaurantId,
+            _id: restaurantId,
+            name: fallbackName,
+            description: 'Restaurant details loading...',
+            isTemporary: true,
+            isFallback: true
+          };
+          logger.warn('Using enhanced temporary restaurant data with fallback name', { 
+            restaurantId, 
+            fallbackName 
+          }, 'entitiesSlice');
+        }
+      } else if (zoneId) {
+        details = await LocalStorageService.getZoneById(zoneId);
+      }
       
       if (!details) {
         throw new Error('Restaurant not found');
       }
 
-      logger.info('Restaurant details fetched', { restaurantId }, 'entitiesSlice');
+      logger.info('Restaurant details fetched successfully', { 
+        restaurantId, 
+        name: details?.name,
+        source: details?.isFromDatabase ? 'DATABASE' : details?.isFallback ? 'FALLBACK' : 'LOCALSTORAGE'
+      }, 'entitiesSlice');
+      
       return { restaurant: details, restaurantId };
     } catch (error) {
       logger.error('Failed to fetch restaurant details', error, 'entitiesSlice');
@@ -65,11 +148,18 @@ export const fetchZoneAndShops = createAsyncThunk(
   'entities/fetchZoneAndShops',
   async (zoneId, { rejectWithValue }) => {
     try {
-      // For now, use the mock API approach
-      const response = await zoneAPI.getById(zoneId);
+      // Import ApiService here to avoid circular dependencies
+      const ApiService = (await import('../../shared/api/ApiService')).default;
+      
+      // Fetch zone shops and zone info using ApiService
+      const response = await ApiService.getZoneShops(zoneId);
       
       logger.info('Zone and shops fetched', { zoneId }, 'entitiesSlice');
-      return { zoneId, ...response.data };
+      return { 
+        zoneId, 
+        zone: response.zone,
+        shops: response.shops 
+      };
     } catch (error) {
       logger.error('Failed to fetch zone and shops', error, 'entitiesSlice');
       
@@ -110,15 +200,37 @@ export const fetchVendors = createAsyncThunk(
   'entities/fetchVendors',
   async (zoneId, { rejectWithValue }) => {
     try {
-      // Use the unified vendor service
-      const vendors = vendorService.getVendors(zoneId);
+      // Use the zone shops API endpoint
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/shops/zones/${zoneId}`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('tableserve_access_token')}`
+        }
+      });
       
-      logger.info('Vendors fetched successfully', { 
-        zoneId, 
-        vendorCount: vendors.length 
-      }, 'entitiesSlice');
+      const result = await response.json();
       
-      return { zoneId, vendors };
+      if (result.success) {
+        const vendors = result.data.shops.map(shop => ({
+          id: shop._id,
+          name: shop.name,
+          description: shop.description,
+          cuisine: shop.category,
+          ownerName: shop.ownerId?.profile?.name || 'Unknown',
+          ownerPhone: shop.contactInfo?.phone || shop.ownerId?.phone,
+          ownerEmail: shop.contactInfo?.email || shop.ownerId?.email,
+          status: shop.status,
+          logo: shop.logo?.url
+        }));
+        
+        logger.info('Vendors fetched successfully', { 
+          zoneId, 
+          vendorCount: vendors.length 
+        }, 'entitiesSlice');
+        
+        return { zoneId, vendors };
+      } else {
+        throw new Error(result.message || 'Failed to fetch vendors');
+      }
     } catch (error) {
       logger.error('Failed to fetch vendors', error, 'entitiesSlice');
       return rejectWithValue(error.message);
@@ -131,14 +243,24 @@ export const addVendor = createAsyncThunk(
   'entities/addVendor',
   async ({ zoneId, vendorData }, { dispatch, rejectWithValue }) => {
     try {
-      const result = await dataService.addVendorToZone(zoneId, vendorData);
+      // Use the new vendor creation endpoint
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/shops/zones/${zoneId}/vendor`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('tableserve_access_token')}`
+        },
+        body: JSON.stringify(vendorData)
+      });
+      
+      const result = await response.json();
       
       if (result.success) {
         // Refetch vendors to ensure consistency
         dispatch(fetchVendors(zoneId));
-        return { zoneId, vendor: result.vendor };
+        return { zoneId, vendor: result.data.shop, credentials: result.data.loginCredentials };
       } else {
-        throw new Error(result.error);
+        throw new Error(result.message || 'Failed to create vendor');
       }
     } catch (error) {
       logger.error('Failed to add vendor', error, 'entitiesSlice');
@@ -171,13 +293,22 @@ export const deleteVendor = createAsyncThunk(
   'entities/deleteVendor',
   async ({ zoneId, vendorId }, { dispatch, rejectWithValue }) => {
     try {
-      // For now, use the mock API approach
-      await zoneAPI.deleteVendorInZone(zoneId, vendorId);
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/shops/zones/${zoneId}/shop/${vendorId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('tableserve_access_token')}`
+        }
+      });
       
-      // Refetch vendors to ensure consistency
-      dispatch(fetchVendors(zoneId));
+      const result = await response.json();
       
-      return { zoneId, vendorId };
+      if (result.success) {
+        // Refetch vendors to ensure consistency
+        dispatch(fetchVendors(zoneId));
+        return { zoneId, vendorId };
+      } else {
+        throw new Error(result.message || 'Failed to delete vendor');
+      }
     } catch (error) {
       logger.error('Failed to delete vendor', error, 'entitiesSlice');
       return rejectWithValue(error.message);
@@ -301,8 +432,20 @@ export const entitiesSlice = createSlice({
       .addCase(fetchRestaurantDetails.fulfilled, (state, action) => {
         state.restaurantLoading = false;
         const { restaurant, restaurantId } = action.payload;
-        state.restaurants[restaurantId] = restaurant;
-        state.currentRestaurant = restaurant;
+
+        // Ensure restaurant data is serializable (no Promises)
+        const cleanRestaurant = restaurant && typeof restaurant === 'object' && !restaurant.then
+          ? JSON.parse(JSON.stringify(restaurant, (key, value) => {
+              // Remove any Promise objects or functions
+              if (value && (typeof value === 'function' || (typeof value === 'object' && value.then))) {
+                return null;
+              }
+              return value;
+            }))
+          : restaurant;
+
+        state.restaurants[restaurantId] = cleanRestaurant;
+        state.currentRestaurant = cleanRestaurant;
       })
       .addCase(fetchRestaurantDetails.rejected, (state, action) => {
         state.restaurantLoading = false;
@@ -319,8 +462,20 @@ export const entitiesSlice = createSlice({
         state.restaurantLoading = false;
         state.operationInProgress = false;
         const restaurant = action.payload;
-        state.restaurants[restaurant.id] = restaurant;
-        state.currentRestaurant = restaurant;
+
+        // Ensure restaurant data is serializable (no Promises)
+        const cleanRestaurant = restaurant && typeof restaurant === 'object' && !restaurant.then
+          ? JSON.parse(JSON.stringify(restaurant, (key, value) => {
+              // Remove any Promise objects or functions
+              if (value && (typeof value === 'function' || (typeof value === 'object' && value.then))) {
+                return null;
+              }
+              return value;
+            }))
+          : restaurant;
+
+        state.restaurants[cleanRestaurant.id] = cleanRestaurant;
+        state.currentRestaurant = cleanRestaurant;
       })
       .addCase(createRestaurant.rejected, (state, action) => {
         state.restaurantLoading = false;
@@ -336,9 +491,32 @@ export const entitiesSlice = createSlice({
       .addCase(fetchZoneAndShops.fulfilled, (state, action) => {
         state.zoneLoading = false;
         const { zoneId, zone, shops } = action.payload;
-        state.zones[zoneId] = zone;
-        state.currentZone = zone;
-        state.zoneShops = shops || [];
+
+        // Ensure zone data is serializable (no Promises)
+        const cleanZone = zone && typeof zone === 'object' && !zone.then
+          ? JSON.parse(JSON.stringify(zone, (key, value) => {
+              // Remove any Promise objects or functions
+              if (value && (typeof value === 'function' || (typeof value === 'object' && value.then))) {
+                return null;
+              }
+              return value;
+            }))
+          : zone;
+
+        const cleanShops = Array.isArray(shops)
+          ? shops.map(shop => shop && typeof shop === 'object' && !shop.then
+              ? JSON.parse(JSON.stringify(shop, (key, value) => {
+                  if (value && (typeof value === 'function' || (typeof value === 'object' && value.then))) {
+                    return null;
+                  }
+                  return value;
+                }))
+              : shop)
+          : [];
+
+        state.zones[zoneId] = cleanZone;
+        state.currentZone = cleanZone;
+        state.zoneShops = cleanShops;
       })
       .addCase(fetchZoneAndShops.rejected, (state, action) => {
         state.zoneLoading = false;

@@ -47,8 +47,8 @@ export default {
         }
       },
       fontFamily: {
-        fredoka: ['Fredoka', 'cursive'],
-        raleway: ['Raleway', 'sans-serif'],
+        fredoka: ['Poppins', 'sans-serif'],
+        raleway: ['Poppins', 'cursive'],
         cinzel: ['Cinzel', 'serif'],
       },
       fontWeight: {

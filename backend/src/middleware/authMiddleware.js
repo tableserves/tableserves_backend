@@ -1,58 +1,387 @@
+const rateLimit = require('express-rate-limit');
 const { verifyAccessToken, extractTokenFromHeader } = require('../services/jwtService');
-const { APIError, catchAsync } = require('./errorHandler');
+const errorHandler = require('./errorHandler');
+const APIError = errorHandler.APIError;
+const catchAsync = require('../utils/catchAsync');
 const { logger, loggerUtils } = require('../utils/logger');
+const User = require('../models/User');
+const Restaurant = require('../models/Restaurant');
+const Zone = require('../models/Zone');
+const ZoneShop = require('../models/ZoneShop');
+const Subscription = require('../models/Subscription');
+
+// Rate limiting configuration
+const rateLimiter = rateLimit({
+  windowMs: parseInt(process.env.USER_RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutes
+  max: parseInt(process.env.USER_RATE_LIMIT_MAX_REQUESTS) || 500, // Limit each IP to 500 requests per windowMs
+  message: {
+    success: false,
+    error: { 
+      message: 'Too many requests from this IP, please try again later.',
+      code: 'RATE_LIMIT_EXCEEDED'
+    }
+  },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+// This should be in a shared file
+const SUBSCRIPTION_PLANS = {
+  // Restaurant Plans
+  restaurant_free: {
+    planType: 'restaurant',
+    features: {
+      crudMenu: true,
+      qrGeneration: true,
+      basicAnalytics: false,
+      customerSupport: true
+    },
+    limits: {
+      maxTables: 1,
+      maxMenuCategories: 1,
+      maxMenuItems: 2, // 2 items per category
+      maxOrdersPerMonth: 50,
+      maxImageUploads: 5
+    },
+    restrictions: {
+      qrCustomization: false,
+      advancedAnalytics: false,
+      multiLocation: false,
+      priority_support: false
+    }
+  },
+
+  restaurant_basic: {
+    planType: 'restaurant',
+    features: {
+      crudMenu: true,
+      qrGeneration: true,
+      qrCustomization: true,
+      basicAnalytics: false,
+      customerSupport: true
+    },
+    limits: {
+      maxTables: 5,
+      maxMenuCategories: 8,
+      maxMenuItems: 80, // 10 items per category (8 × 10)
+      maxOrdersPerMonth: 1000,
+      maxImageUploads: 50
+    },
+    restrictions: {
+      advancedAnalytics: false,
+      multiLocation: false,
+      priority_support: false
+    }
+  },
+
+  restaurant_advanced: {
+    planType: 'restaurant',
+    features: {
+      crudMenu: true,
+      qrGeneration: true,
+      qrCustomization: true,
+      basicAnalytics: true,
+      advancedAnalytics: true,
+      customerSupport: true,
+      prioritySupport: true
+    },
+    limits: {
+      maxTables: 8,
+      maxMenuCategories: 15,
+      maxMenuItems: 300, // 20 items per category (15 × 20)
+      maxOrdersPerMonth: 2000,
+      maxImageUploads: 100
+    },
+    restrictions: {
+      multiLocation: false
+    }
+  },
+  restaurant_premium: {
+    planType: 'restaurant',
+    features: {
+      crudMenu: true,
+      qrGeneration: true,
+      qrCustomization: true,
+      basicAnalytics: true,
+      advancedAnalytics: true,
+      customerSupport: true,
+      prioritySupport: true,
+      multiLocation: true
+    },
+    limits: {
+      maxTables: 50,
+      maxMenuCategories: 25,
+      maxMenuItems: 200,
+      maxOrdersPerMonth: 2000,
+      maxImageUploads: 100
+    },
+    restrictions: {}
+  },
+  restaurant_enterprise: {
+    planType: 'restaurant',
+    features: {
+      crudMenu: true,
+      qrGeneration: true,
+      qrCustomization: true,
+      basicAnalytics: true,
+      advancedAnalytics: true,
+      customerSupport: true,
+      prioritySupport: true,
+      multiLocation: true,
+      whiteLabel: true,
+      apiAccess: true,
+      customIntegrations: true
+    },
+    limits: {
+      maxTables: null, // unlimited
+      maxMenuCategories: null,
+      maxMenuItems: null,
+      maxOrdersPerMonth: null,
+      maxImageUploads: null
+    },
+    restrictions: {}
+  },
+
+  // Zone Plans
+  zone_free: {
+    planType: 'zone',
+    features: {
+      vendorManagement: true,
+      qrGeneration: true,
+      basicAnalytics: false,
+      customerSupport: true
+    },
+    limits: {
+      maxShops: 1,
+      maxTables: 1,
+      maxVendors: 1,
+      maxMenuCategories: 1,
+      maxMenuItems: 1, // 1 item per category
+      maxOrdersPerMonth: 50,
+      maxImageUploads: 5
+    },
+    restrictions: {
+      qrCustomization: false,
+      advancedAnalytics: false,
+      prioritySupport: false
+    }
+  },
+
+  zone_basic: {
+    planType: 'zone',
+    features: {
+      vendorManagement: true,
+      qrGeneration: true,
+      basicAnalytics: true,
+      customerSupport: true
+    },
+    limits: {
+      maxShops: 5,
+      maxTables: 5,
+      maxVendors: 5,
+      maxMenuCategories: 8,
+      maxMenuItems: 80, // 10 items per category (8 × 10)
+      maxOrdersPerMonth: 1000,
+      maxImageUploads: 50
+    },
+    restrictions: {
+      qrCustomization: false,
+      advancedAnalytics: false,
+      prioritySupport: false
+    }
+  },
+
+  zone_advanced: {
+    planType: 'zone',
+    features: {
+      vendorManagement: true,
+      qrGeneration: true,
+      qrCustomization: true,
+      basicAnalytics: true,
+      advancedAnalytics: true,
+      customerSupport: true,
+      prioritySupport: true
+    },
+    limits: {
+      maxShops: 8,
+      maxTables: 8,
+      maxVendors: 8,
+      maxMenuCategories: 15,
+      maxMenuItems: 300, // 20 items per category (15 × 20)
+      maxOrdersPerMonth: 2000,
+      maxImageUploads: 100
+    },
+    restrictions: {}
+  },
+
+  zone_premium: {
+    planType: 'zone',
+    features: {
+      vendorManagement: true,
+      qrGeneration: true,
+      qrCustomization: true,
+      basicAnalytics: true,
+      advancedAnalytics: true,
+      customerSupport: true,
+      prioritySupport: true,
+      whiteLabel: true,
+      apiAccess: true
+    },
+    limits: {
+      maxShops: null, // Custom - Set by Super Admin
+      maxTables: null, // Custom - Set by Super Admin
+      maxVendors: null, // Custom - Set by Super Admin
+      maxMenuCategories: null, // Custom - Set by Super Admin
+      maxMenuItems: null, // Custom - Set by Super Admin
+      maxOrdersPerMonth: null, // Unlimited
+      maxImageUploads: null // Custom - Set by Super Admin
+    },
+    restrictions: {}
+  },
+  zone_enterprise: {
+    planType: 'zone',
+    features: {
+      vendorManagement: true,
+      qrGeneration: true,
+      qrCustomization: true,
+      basicAnalytics: true,
+      advancedAnalytics: true,
+      customerSupport: true,
+      prioritySupport: true,
+      whiteLabel: true,
+      apiAccess: true,
+      customIntegrations: true
+    },
+    limits: {
+      maxShops: null,
+      maxVendors: null,
+      maxMenuCategories: null,
+      maxMenuItems: null,
+      maxOrdersPerMonth: null,
+      maxImageUploads: null
+    },
+    restrictions: {}
+  }
+};
+
+// FIXED: User rate limiting middleware - removed custom keyGenerator for IPv6 compatibility
+const userRateLimit = rateLimit({
+  windowMs: parseInt(process.env.USER_RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutes
+  max: parseInt(process.env.USER_RATE_LIMIT_MAX_REQUESTS) || 500,
+  message: {
+    success: false,
+    error: {
+      message: 'Too many requests from this user, please try again later.',
+      code: 'USER_RATE_LIMIT_EXCEEDED'
+    }
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  // Use default IP handling (supports IPv6) - removed custom keyGenerator
+  skip: (req) => {
+    // Skip rate limiting for health checks
+    if (req.path.includes('/health')) {
+      return true;
+    }
+    return false;
+  }
+});
 
 /**
  * Authentication middleware - verifies JWT token
  */
 const authenticate = catchAsync(async (req, res, next) => {
-  const authHeader = req.headers.authorization;
-  const token = extractTokenFromHeader(authHeader);
-
-  if (!token) {
-    loggerUtils.logSecurity('Authentication failed - No token provided', {
-      ip: req.ip,
-      userAgent: req.get('User-Agent'),
-      url: req.originalUrl
-    });
-    throw new APIError('Access token required', 401);
-  }
-
   try {
-    // Verify token
-    const decoded = verifyAccessToken(token);
-    
-    // TODO: Once we have User model, fetch user from database
-    // For now, we'll use the decoded token payload
-    req.user = {
-      id: decoded.userId,
-      email: decoded.email,
-      role: decoded.role,
-      tokenIat: decoded.iat
-    };
+    console.log('🔍 Headers received:', {
+      authorization: req.headers.authorization ? 'present' : 'missing',
+      contentType: req.headers['content-type'],
+      userAgent: req.headers['user-agent']?.substring(0, 50) + '...'
+    });
 
-    loggerUtils.logAuth('Authentication successful', decoded.userId, {
-      role: decoded.role,
-      ip: req.ip
+    const authHeader = req.headers.authorization;
+    const token = extractTokenFromHeader(authHeader);
+
+    if (!token) {
+      logger.warn('Authentication failed: No token provided', {
+        url: req.url,
+        method: req.method,
+        headers: {
+          authorization: authHeader ? 'present' : 'missing',
+          userAgent: req.headers['user-agent']
+        }
+      });
+      throw new APIError('Access token required', 401);
+    }
+
+    const decoded = verifyAccessToken(token);
+    const user = await User.findById(decoded.userId).populate('subscription');
+
+    if (!user) {
+      logger.warn('Authentication failed: User not found', {
+        userId: decoded.userId,
+        url: req.url,
+        method: req.method
+      });
+      throw new APIError('User not found', 401);
+    }
+
+    if (user.status !== 'active') {
+      logger.warn('Authentication failed: Account inactive', {
+        userId: user._id,
+        status: user.status,
+        url: req.url,
+        method: req.method
+      });
+      throw new APIError('Account is inactive', 401);
+    }
+
+    // Add shopId for zone shop and zone vendor users
+    if (['zone_shop', 'zone_vendor'].includes(user.role)) {
+      try {
+        const ZoneShop = require('../models/ZoneShop');
+        const shop = await ZoneShop.findOne({ ownerId: user._id }).select('_id');
+        if (shop) {
+          user.shopId = shop._id;
+        }
+      } catch (shopError) {
+        logger.warn('Could not find shop for zone user during authentication', {
+          userId: user._id,
+          role: user.role,
+          error: shopError.message
+        });
+      }
+    }
+
+    req.user = user;
+    req.token = token;
+
+    logger.debug('Authentication successful', {
+      userId: user._id,
+      role: user.role,
+      shopId: user.shopId,
+      url: req.url,
+      method: req.method
     });
 
     next();
   } catch (error) {
-    loggerUtils.logSecurity('Authentication failed - Invalid token', {
+    if (error instanceof APIError) {
+      throw error;
+    }
+
+    logger.error('Authentication error', {
       error: error.message,
-      ip: req.ip,
-      userAgent: req.get('User-Agent'),
-      url: req.originalUrl
+      url: req.url,
+      method: req.method,
+      stack: error.stack
     });
-    
-    // Pass the error to the error handler
-    next(error);
+
+    throw new APIError('Invalid access token', 401);
   }
 });
 
 /**
  * Authorization middleware - checks user role
- * @param {...string} allowedRoles - Allowed roles
  */
 const authorize = (...allowedRoles) => {
   return catchAsync(async (req, res, next) => {
@@ -60,38 +389,69 @@ const authorize = (...allowedRoles) => {
       throw new APIError('Authentication required', 401);
     }
 
-    const userRole = req.user.role;
-
-    // Super admin has access to everything
-    if (userRole === 'admin') {
-      return next();
-    }
-
-    // Check if user role is in allowed roles
-    if (!allowedRoles.includes(userRole)) {
-      loggerUtils.logSecurity('Authorization failed - Insufficient permissions', {
-        userId: req.user.id,
-        userRole,
-        requiredRoles: allowedRoles,
+    // Enhanced logging for debugging authorization issues
+    if (!allowedRoles.includes(req.user.role)) {
+      logger.error('❌ Authorization FAILED:', {
+        userId: req.user._id || req.user.id,
+        userRole: req.user.role,
+        allowedRoles,
         url: req.originalUrl,
-        ip: req.ip
+        method: req.method
       });
-      
       throw new APIError('Insufficient permissions', 403);
     }
-
-    loggerUtils.logAuth('Authorization successful', req.user.id, {
-      role: userRole,
-      requiredRoles: allowedRoles
-    });
 
     next();
   });
 };
 
 /**
+ * Optional authentication middleware - adds user to request if token is valid
+ */
+const optionalAuth = catchAsync(async (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization;
+    const token = extractTokenFromHeader(authHeader);
+
+    if (token) {
+      const decoded = verifyAccessToken(token);
+      const user = await User.findById(decoded.userId).populate('subscription');
+
+      if (user && user.status === 'active') {
+        req.user = user;
+        req.token = token;
+      }
+    }
+  } catch (error) {
+    // Silently continue without authentication for optional auth
+    logger.warn('Optional auth failed:', error.message);
+  }
+
+  next();
+});
+
+/**
+ * API Key authentication middleware
+ */
+const authenticateApiKey = catchAsync(async (req, res, next) => {
+  const apiKey = req.headers['x-api-key'];
+
+  if (!apiKey) {
+    throw new APIError('API key required', 401);
+  }
+
+  // Validate API key (implement your API key validation logic)
+  const isValidApiKey = process.env.VALID_API_KEYS?.split(',').includes(apiKey);
+
+  if (!isValidApiKey) {
+    throw new APIError('Invalid API key', 401);
+  }
+
+  next();
+});
+
+/**
  * Subscription feature middleware - checks if user has access to specific feature
- * @param {string} featureName - Feature name to check
  */
 const checkFeatureAccess = (featureName) => {
   return catchAsync(async (req, res, next) => {
@@ -99,18 +459,21 @@ const checkFeatureAccess = (featureName) => {
       throw new APIError('Authentication required', 401);
     }
 
-    // Super admin has access to all features
     if (req.user.role === 'admin') {
       return next();
     }
 
-    // TODO: Once we have Subscription model, check user's subscription features
-    // For now, we'll allow access to all features
-    logger.debug('Feature access check', {
-      userId: req.user.id,
-      feature: featureName,
-      note: 'Subscription check not implemented yet'
-    });
+    const subscription = await Subscription.findOne({ userId: req.user._id, status: 'active' });
+
+    if (!subscription) {
+      throw new APIError('No active subscription found', 403);
+    }
+
+    const plan = SUBSCRIPTION_PLANS[subscription.planKey];
+
+    if (!plan || !plan.features[featureName]) {
+      throw new APIError(`Feature '${featureName}' is not available in your current plan`, 403);
+    }
 
     next();
   });
@@ -118,8 +481,6 @@ const checkFeatureAccess = (featureName) => {
 
 /**
  * Resource ownership middleware - checks if user owns the resource
- * @param {string} resourceIdParam - Parameter name for resource ID
- * @param {string} resourceType - Type of resource (restaurant, zone, etc.)
  */
 const checkResourceOwnership = (resourceIdParam, resourceType) => {
   return catchAsync(async (req, res, next) => {
@@ -127,137 +488,45 @@ const checkResourceOwnership = (resourceIdParam, resourceType) => {
       throw new APIError('Authentication required', 401);
     }
 
-    // Super admin has access to all resources
     if (req.user.role === 'admin') {
       return next();
     }
 
     const resourceId = req.params[resourceIdParam];
-    
-    if (!resourceId) {
-      throw new APIError(`${resourceIdParam} parameter is required`, 400);
-    }
+    let resource;
 
-    // TODO: Once we have models, check resource ownership
-    // For now, we'll allow access
-    logger.debug('Resource ownership check', {
-      userId: req.user.id,
-      resourceType,
-      resourceId,
-      note: 'Ownership check not implemented yet'
-    });
-
-    next();
-  });
-};
-
-/**
- * Rate limiting by user
- * @param {number} maxRequests - Maximum requests per window
- * @param {number} windowMs - Time window in milliseconds
- */
-const userRateLimit = (maxRequests = 100, windowMs = 15 * 60 * 1000) => {
-  const requestCounts = new Map();
-
-  return catchAsync(async (req, res, next) => {
-    if (!req.user) {
-      return next(); // Skip rate limiting for unauthenticated requests
-    }
-
-    const userId = req.user.id;
-    const now = Date.now();
-    const windowStart = now - windowMs;
-
-    // Clean old entries
-    for (const [key, data] of requestCounts.entries()) {
-      if (data.windowStart < windowStart) {
-        requestCounts.delete(key);
+    try {
+      switch (resourceType) {
+        case 'restaurant':
+          resource = await Restaurant.findById(resourceId);
+          if (!resource || resource.ownerId.toString() !== req.user._id.toString()) {
+            throw new APIError('Restaurant not found or access denied', 404);
+          }
+          break;
+        case 'zone':
+          resource = await Zone.findById(resourceId);
+          if (!resource || resource.ownerId.toString() !== req.user._id.toString()) {
+            throw new APIError('Zone not found or access denied', 404);
+          }
+          break;
+        case 'zoneshop':
+          resource = await ZoneShop.findById(resourceId).populate('zoneId');
+          if (!resource || resource.zoneId.ownerId.toString() !== req.user._id.toString()) {
+            throw new APIError('Shop not found or access denied', 404);
+          }
+          break;
+        default:
+          throw new APIError('Invalid resource type', 400);
       }
+
+      req.resource = resource;
+      next();
+    } catch (error) {
+      if (error instanceof APIError) {
+        throw error;
+      }
+      throw new APIError('Resource validation failed', 500);
     }
-
-    // Get or create user request data
-    let userRequests = requestCounts.get(userId);
-    if (!userRequests || userRequests.windowStart < windowStart) {
-      userRequests = {
-        count: 0,
-        windowStart: now
-      };
-      requestCounts.set(userId, userRequests);
-    }
-
-    // Check rate limit
-    if (userRequests.count >= maxRequests) {
-      loggerUtils.logSecurity('Rate limit exceeded', {
-        userId,
-        count: userRequests.count,
-        limit: maxRequests,
-        ip: req.ip
-      });
-      
-      throw new APIError('Rate limit exceeded. Please try again later.', 429);
-    }
-
-    // Increment counter
-    userRequests.count++;
-    
-    next();
-  });
-};
-
-/**
- * Optional authentication - sets user if token is valid, but doesn't require it
- */
-const optionalAuth = catchAsync(async (req, res, next) => {
-  const authHeader = req.headers.authorization;
-  const token = extractTokenFromHeader(authHeader);
-
-  if (!token) {
-    return next(); // No token, continue without user
-  }
-
-  try {
-    const decoded = verifyAccessToken(token);
-    
-    req.user = {
-      id: decoded.userId,
-      email: decoded.email,
-      role: decoded.role,
-      tokenIat: decoded.iat
-    };
-
-    loggerUtils.logAuth('Optional authentication successful', decoded.userId);
-  } catch (error) {
-    // Token is invalid, but we don't throw error for optional auth
-    logger.debug('Optional authentication failed', { error: error.message });
-  }
-
-  next();
-});
-
-/**
- * API key authentication middleware (for external integrations)
- * @param {string} expectedApiKey - Expected API key value
- */
-const authenticateApiKey = (expectedApiKey) => {
-  return catchAsync(async (req, res, next) => {
-    const apiKey = req.headers['x-api-key'] || req.query.apiKey;
-
-    if (!apiKey) {
-      throw new APIError('API key required', 401);
-    }
-
-    if (apiKey !== expectedApiKey) {
-      loggerUtils.logSecurity('API key authentication failed', {
-        providedKey: apiKey.substring(0, 8) + '...',
-        ip: req.ip,
-        userAgent: req.get('User-Agent')
-      });
-      
-      throw new APIError('Invalid API key', 401);
-    }
-
-    loggerUtils.logAuth('API key authentication successful', 'api-client');
-    next();
   });
 };
 

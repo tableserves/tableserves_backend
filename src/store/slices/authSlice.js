@@ -1,63 +1,19 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import AuthService from '../../services/AuthService';
-import JWTTokenService from '../../services/JWTTokenService';
+import AuthService from '../../shared/auth/AuthService';
+import simpleTokenService from '../../shared/auth/SimpleTokenService';
+import { getUserFriendlyErrorMessage } from '../../shared/utils/errorMessageUtils';
 
-export const loginUser = createAsyncThunk(
-  'auth/loginUser',
-  async (credentials, { rejectWithValue }) => {
-    console.log('Attempting login with credentials:', credentials);
-    try {
-      const data = AuthService.authenticateAnyRole(credentials.username, credentials.password);
-      console.log('AuthService returned data:', data);
-      return data;
-    } catch (error) {
-      console.error('AuthService error:', error.message);
-      return rejectWithValue(error.message);
-    }
-  }
-);
 
-export const refreshTokens = createAsyncThunk(
-  'auth/refreshTokens',
-  async (_, { rejectWithValue }) => {
-    try {
-      const result = await AuthService.refreshTokens();
-      if (result.success) {
-        const currentUser = JWTTokenService.getCurrentUser();
-        return {
-          user: currentUser,
-          accessToken: result.accessToken,
-          refreshToken: result.refreshToken
-        };
-      } else {
-        return rejectWithValue(result.error);
-      }
-    } catch (error) {
-      return rejectWithValue(error.message);
-    }
-  }
-);
 
-export const logoutUser = createAsyncThunk(
-  'auth/logoutUser',
-  async (_, { rejectWithValue }) => {
-    try {
-      const result = AuthService.logout();
-      if (result.success) {
-        return { success: true };
-      } else {
-        return rejectWithValue(result.error);
-      }
-    } catch (error) {
-      return rejectWithValue(error.message);
-    }
-  }
-);
+
+
+
 
 const initialState = {
   user: null,
   accessToken: null,
   refreshToken: null,
+  businessEntity: null,
   isAuthenticated: false,
   error: null,
   loading: false,
@@ -71,13 +27,34 @@ export const authSlice = createSlice({
       state.user = action.payload.user;
       state.accessToken = action.payload.accessToken;
       state.refreshToken = action.payload.refreshToken;
+      state.businessEntity = action.payload.businessEntity || null;
       state.isAuthenticated = true;
       state.error = null;
+    },
+    setBusinessOwner: (state, action) => {
+      // Transition user to business owner mode
+      const { businessType, businessId, subscription } = action.payload;
+      
+      if (state.user) {
+        state.user = {
+          ...state.user,
+          role: businessType === 'restaurant' ? 'restaurant_owner' : 'zone_admin',
+          businessType,
+          isBusinessOwner: true,
+          ...(businessType === 'restaurant' && { restaurantId: businessId }),
+          ...(businessType === 'zone' && { zoneId: businessId }),
+          subscription,
+          registrationComplete: true,
+          onboardingComplete: true
+        };
+        state.isAuthenticated = true;
+      }
     },
     logout: (state) => {
       state.user = null;
       state.accessToken = null;
       state.refreshToken = null;
+      state.businessEntity = null;
       state.isAuthenticated = false;
       state.error = null;
     },
@@ -90,55 +67,13 @@ export const authSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
-      .addCase(loginUser.pending, (state) => {
-        state.loading = true;
-        state.error = null;
-      })
-      .addCase(loginUser.fulfilled, (state, action) => {
-        state.loading = false;
-        state.user = action.payload.user;
-        state.accessToken = action.payload.accessToken;
-        state.refreshToken = action.payload.refreshToken;
-        state.isAuthenticated = true;
-        state.error = null;
-      })
-      .addCase(loginUser.rejected, (state, action) => {
-        state.loading = false;
-        state.error = action.payload;
-      })
-      .addCase(refreshTokens.pending, (state) => {
-        state.loading = true;
-      })
-      .addCase(refreshTokens.fulfilled, (state, action) => {
-        state.loading = false;
-        state.user = action.payload.user;
-        state.accessToken = action.payload.accessToken;
-        state.refreshToken = action.payload.refreshToken;
-        state.isAuthenticated = true;
-        state.error = null;
-      })
-      .addCase(refreshTokens.rejected, (state, action) => {
-        state.loading = false;
-        state.user = null;
-        state.accessToken = null;
-        state.refreshToken = null;
-        state.isAuthenticated = false;
-        state.error = action.payload;
-      })
-      .addCase(logoutUser.fulfilled, (state) => {
-        state.user = null;
-        state.accessToken = null;
-        state.refreshToken = null;
-        state.isAuthenticated = false;
-        state.error = null;
-        state.loading = false;
-      });
+
+
   },
 });
 
-export const { setCredentials, logout, setError, clearError } = authSlice.actions;
+export const { setCredentials, setBusinessOwner, logout, setError, clearError } = authSlice.actions;
 
-// Export async thunks
-export { loginUser, refreshTokens, logoutUser };
+
 
 export default authSlice.reducer;

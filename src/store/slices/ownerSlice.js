@@ -1,25 +1,14 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-
-// Mock data and localStorage functions
-const getOwnersFromStorage = () => {
-  const stored = localStorage.getItem('restaurantOwners');
-  return stored ? JSON.parse(stored) : [];
-};
-
-const saveOwnersToStorage = (owners) => {
-  localStorage.setItem('restaurantOwners', JSON.stringify(owners));
-};
+import api from '../../services/api';
 
 export const fetchOwners = createAsyncThunk(
   'owner/fetchOwners',
   async (_, { rejectWithValue }) => {
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 500));
-      const owners = getOwnersFromStorage();
-      return owners;
+      const response = await api.get('/restaurants');
+      return response.data.data || [];
     } catch (error) {
-      return rejectWithValue(error.message);
+      return rejectWithValue(error.response?.data?.message || error.message);
     }
   }
 );
@@ -28,19 +17,34 @@ export const createOwner = createAsyncThunk(
   'owner/createOwner',
   async (ownerData, { rejectWithValue }) => {
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 500));
-      const owners = getOwnersFromStorage();
-      const newOwner = {
-        id: `owner-${Date.now()}`,
-        ...ownerData,
-        status: 'active',
-      };
-      const updatedOwners = [...owners, newOwner];
-      saveOwnersToStorage(updatedOwners);
-      return newOwner;
+      const response = await api.post('/restaurants', ownerData);
+      return response.data.data;
     } catch (error) {
-      return rejectWithValue(error.message);
+      return rejectWithValue(error.response?.data?.message || error.message);
+    }
+  }
+);
+
+export const updateOwner = createAsyncThunk(
+  'owner/updateOwner',
+  async ({ id, data }, { rejectWithValue }) => {
+    try {
+      const response = await api.put(`/restaurants/${id}`, data);
+      return response.data.data;
+    } catch (error) {
+      return rejectWithValue(error.response?.data?.message || error.message);
+    }
+  }
+);
+
+export const deleteOwner = createAsyncThunk(
+  'owner/deleteOwner',
+  async (id, { rejectWithValue }) => {
+    try {
+      await api.delete(`/restaurants/${id}`);
+      return id;
+    } catch (error) {
+      return rejectWithValue(error.response?.data?.message || error.message);
     }
   }
 );
@@ -78,6 +82,31 @@ const ownerSlice = createSlice({
         state.loading = false;
       })
       .addCase(createOwner.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.payload;
+      })
+      .addCase(updateOwner.pending, (state) => {
+        state.loading = true;
+      })
+      .addCase(updateOwner.fulfilled, (state, action) => {
+        const index = state.owners.findIndex(owner => owner._id === action.payload._id);
+        if (index !== -1) {
+          state.owners[index] = action.payload;
+        }
+        state.loading = false;
+      })
+      .addCase(updateOwner.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.payload;
+      })
+      .addCase(deleteOwner.pending, (state) => {
+        state.loading = true;
+      })
+      .addCase(deleteOwner.fulfilled, (state, action) => {
+        state.owners = state.owners.filter(owner => owner._id !== action.payload);
+        state.loading = false;
+      })
+      .addCase(deleteOwner.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload;
       });

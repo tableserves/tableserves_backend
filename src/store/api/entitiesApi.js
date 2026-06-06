@@ -12,34 +12,28 @@ export const entitiesApi = api.injectEndpoints({
     
     // Get all restaurants
     getRestaurants: builder.query({
-      query: () => ({
-        endpoint: '/restaurants',
-        method: 'GET',
-      }),
+      query: () => '/restaurants',
       providesTags: ['Restaurant'],
       transformResponse: (response) => {
-        return response.data || [];
+        return response.data || response || [];
       },
     }),
 
     // Get restaurant by ID
     getRestaurant: builder.query({
-      query: (id) => ({
-        endpoint: `/restaurants/${id}`,
-        method: 'GET',
-      }),
+      query: (id) => `/restaurants/${id}`,
       providesTags: (result, error, id) => [{ type: 'Restaurant', id }],
       transformResponse: (response) => {
-        return response.data || null;
+        return response.data || response || null;
       },
     }),
 
     // Create restaurant
     createRestaurant: builder.mutation({
       query: (restaurantData) => ({
-        endpoint: '/restaurants',
+        url: '/restaurants',
         method: 'POST',
-        data: restaurantData,
+        body: restaurantData,
       }),
       invalidatesTags: ['Restaurant'],
       transformResponse: (response) => {
@@ -50,9 +44,9 @@ export const entitiesApi = api.injectEndpoints({
     // Update restaurant
     updateRestaurant: builder.mutation({
       query: ({ id, ...data }) => ({
-        endpoint: `/restaurants/${id}`,
+        url: `/restaurants/${id}`,
         method: 'PUT',
-        data,
+        body: data,
       }),
       invalidatesTags: (result, error, { id }) => [
         { type: 'Restaurant', id },
@@ -66,7 +60,7 @@ export const entitiesApi = api.injectEndpoints({
     // Delete restaurant
     deleteRestaurant: builder.mutation({
       query: (id) => ({
-        endpoint: `/restaurants/${id}`,
+        url: `/restaurants/${id}`,
         method: 'DELETE',
       }),
       invalidatesTags: ['Restaurant'],
@@ -78,7 +72,7 @@ export const entitiesApi = api.injectEndpoints({
     // Generate QR code for restaurant
     generateRestaurantQR: builder.mutation({
       query: (id) => ({
-        endpoint: `/restaurants/${id}/generate-qr`,
+        url: `/restaurants/${id}/generate-qr`,
         method: 'POST',
       }),
       invalidatesTags: (result, error, id) => [{ type: 'Restaurant', id }],
@@ -91,22 +85,19 @@ export const entitiesApi = api.injectEndpoints({
 
     // Get zone by ID
     getZone: builder.query({
-      query: (zoneId) => ({
-        endpoint: `/zones/${zoneId}`,
-        method: 'GET',
-      }),
+      query: (zoneId) => `/zones/${zoneId}`,
       providesTags: (result, error, zoneId) => [{ type: 'Zone', id: zoneId }],
       transformResponse: (response) => {
-        return response.data || null;
+        return response.data || response || null;
       },
     }),
 
     // Create zone
     createZone: builder.mutation({
       query: (zoneData) => ({
-        endpoint: '/zones',
+        url: '/zones',
         method: 'POST',
-        data: zoneData,
+        body: zoneData,
       }),
       invalidatesTags: ['Zone'],
       transformResponse: (response) => {
@@ -117,9 +108,9 @@ export const entitiesApi = api.injectEndpoints({
     // Update zone
     updateZone: builder.mutation({
       query: ({ id, ...data }) => ({
-        endpoint: `/zones/${id}`,
+        url: `/zones/${id}`,
         method: 'PUT',
-        data,
+        body: data,
       }),
       invalidatesTags: (result, error, { id }) => [
         { type: 'Zone', id },
@@ -130,29 +121,26 @@ export const entitiesApi = api.injectEndpoints({
       },
     }),
 
-    // ===== VENDOR ENDPOINTS =====
+    // ===== SHOP/VENDOR ENDPOINTS =====
 
-    // Get vendors for a zone
+    // Get shops for a zone (vendors are shops in the backend)
     getVendors: builder.query({
-      query: (zoneId) => ({
-        endpoint: `/zones/${zoneId}/vendors`,
-        method: 'GET',
-      }),
+      query: (zoneId) => `/shops/zones/${zoneId}`,
       providesTags: (result, error, zoneId) => [
         { type: 'Vendor', id: `zone-${zoneId}` },
         'Vendor',
       ],
       transformResponse: (response) => {
-        return response.data || [];
+        return response.data || response || [];
       },
     }),
 
-    // Add vendor to zone
+    // Add shop/vendor to zone
     addVendor: builder.mutation({
       query: ({ zoneId, vendorData }) => ({
-        endpoint: `/zones/${zoneId}/vendors`,
+        url: `/shops/zones/${zoneId}`,
         method: 'POST',
-        data: vendorData,
+        body: vendorData,
       }),
       invalidatesTags: (result, error, { zoneId }) => [
         { type: 'Vendor', id: `zone-${zoneId}` },
@@ -164,12 +152,12 @@ export const entitiesApi = api.injectEndpoints({
       },
     }),
 
-    // Update vendor
+    // Update shop/vendor
     updateVendor: builder.mutation({
       query: ({ zoneId, vendorId, vendorData }) => ({
-        endpoint: `/zones/${zoneId}/vendors/${vendorId}`,
+        url: `/shops/zones/${zoneId}/shop/${vendorId}`,
         method: 'PUT',
-        data: vendorData,
+        body: vendorData,
       }),
       invalidatesTags: (result, error, { zoneId, vendorId }) => [
         { type: 'Vendor', id: vendorId },
@@ -181,10 +169,10 @@ export const entitiesApi = api.injectEndpoints({
       },
     }),
 
-    // Delete vendor
+    // Delete shop/vendor
     deleteVendor: builder.mutation({
       query: ({ zoneId, vendorId }) => ({
-        endpoint: `/zones/${zoneId}/vendors/${vendorId}`,
+        url: `/shops/zones/${zoneId}/shop/${vendorId}`,
         method: 'DELETE',
       }),
       invalidatesTags: (result, error, { zoneId }) => [
@@ -197,17 +185,14 @@ export const entitiesApi = api.injectEndpoints({
       },
     }),
 
-    // Get vendor by ID (individual vendor details)
+    // Get shop/vendor by ID (individual vendor details)
     getVendor: builder.query({
-      query: ({ zoneId, vendorId }) => ({
-        endpoint: `/zones/${zoneId}/vendors/${vendorId}`,
-        method: 'GET',
-      }),
+      query: ({ zoneId, vendorId }) => `/shops/zones/${zoneId}/shop/${vendorId}`,
       providesTags: (result, error, { vendorId }) => [
         { type: 'Vendor', id: vendorId },
       ],
       transformResponse: (response) => {
-        return response.data || null;
+        return response.data || response || null;
       },
     }),
   }),

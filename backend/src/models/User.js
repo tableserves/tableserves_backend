@@ -13,15 +13,27 @@ const userSchema = new Schema({
     unique: true,
     lowercase: true,
     trim: true,
-    match: [/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/, 'Please provide a valid email']
+    match: [/^[^\s@]+@[^\s@]+\.[^\s@]+$/, 'Please provide a valid email']
   },
-  
+
+  username: {
+    type: String,
+    required: function() {
+      return this.role !== 'customer';
+    },
+    unique: true,
+    trim: true,
+    minlength: [3, 'Username must be at least 3 characters'],
+    maxlength: [30, 'Username cannot exceed 30 characters'],
+    match: [/^[a-zA-Z0-9_-]+$/, 'Username can only contain letters, numbers, underscores, and hyphens']
+  },
+
   phone: {
     type: String,
     required: [true, 'Phone number is required'],
     unique: true,
     trim: true,
-    match: [/^[\\+]?[1-9][\\d]{0,15}$/, 'Please provide a valid phone number']
+    match: [/^(\+?[1-9][\d]{9,14})$/, 'Please provide a valid phone number']
   },
   
   passwordHash: {
@@ -34,11 +46,23 @@ const userSchema = new Schema({
   role: {
     type: String,
     enum: {
-      values: ['admin', 'restaurant_owner', 'zone_admin', 'zone_shop', 'zone_vendor'],
+      values: ['admin', 'restaurant_owner', 'zone_admin', 'zone_shop', 'zone_vendor', 'customer'],
       message: 'Invalid user role'
     },
     required: [true, 'User role is required'],
     default: 'restaurant_owner'
+  },
+
+  // Business Type (for owners)
+  businessType: {
+    type: String,
+    enum: {
+      values: ['restaurant', 'zone'],
+      message: 'Invalid business type'
+    },
+    required: function() {
+      return ['restaurant_owner', 'zone_admin'].includes(this.role);
+    }
   },
   
   // Account Status
@@ -81,6 +105,23 @@ const userSchema = new Schema({
   
   phoneOTPExpires: {
     type: Date,
+    select: false
+  },
+  
+  // Email OTP (for email-based verification)
+  emailOTP: {
+    type: String,
+    select: false
+  },
+  
+  emailOTPExpires: {
+    type: Date,
+    select: false
+  },
+  
+  emailOTPPurpose: {
+    type: String,
+    enum: ['verification', 'profile_update', 'security'],
     select: false
   },
   
@@ -214,6 +255,76 @@ const userSchema = new Schema({
     type: Schema.Types.ObjectId,
     ref: 'Subscription'
   },
+
+  // Business Entity References
+  restaurantId: {
+    type: Schema.Types.ObjectId,
+    ref: 'Restaurant',
+    default: null,
+    index: true
+  },
+
+  zoneId: {
+    type: Schema.Types.ObjectId,
+    ref: 'Zone',
+    default: null,
+    index: true
+  },
+
+  shopId: {
+    type: Schema.Types.ObjectId,
+    ref: 'ZoneShop',
+    default: null,
+    index: true
+  },
+
+  // Plan Management Fields
+  currentPlanId: {
+    type: Schema.Types.ObjectId,
+    ref: 'Plan',
+    default: null,
+    index: true
+  },
+
+  planExpiryDate: {
+    type: Date,
+    default: null,
+    index: true
+  },
+
+  planStatus: {
+    type: String,
+    enum: {
+      values: ['free', 'active', 'expired', 'pending', 'cancelled'],
+      message: 'Invalid plan status'
+    },
+    default: 'free',
+    index: true
+  },
+
+  // Plan History (for tracking upgrades/downgrades)
+  planHistory: [{
+    planId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Plan'
+    },
+    startDate: {
+      type: Date,
+      required: true
+    },
+    endDate: {
+      type: Date
+    },
+    status: {
+      type: String,
+      enum: ['active', 'expired', 'cancelled'],
+      required: true
+    },
+    paymentId: {
+      type: Schema.Types.ObjectId,
+      ref: 'PlanPayment'
+    }
+  }],
   
   // Refresh Tokens (for JWT)
   refreshTokens: [{
@@ -256,6 +367,9 @@ const userSchema = new Schema({
       delete ret.emailVerificationExpires;
       delete ret.phoneOTP;
       delete ret.phoneOTPExpires;
+      delete ret.emailOTP;
+      delete ret.emailOTPExpires;
+      delete ret.emailOTPPurpose;
       delete ret.passwordResetToken;
       delete ret.passwordResetExpires;
       delete ret.refreshTokens;
@@ -270,6 +384,9 @@ const userSchema = new Schema({
       delete ret.emailVerificationExpires;
       delete ret.phoneOTP;
       delete ret.phoneOTPExpires;
+      delete ret.emailOTP;
+      delete ret.emailOTPExpires;
+      delete ret.emailOTPPurpose;
       delete ret.passwordResetToken;
       delete ret.passwordResetExpires;
       delete ret.refreshTokens;
@@ -278,10 +395,12 @@ const userSchema = new Schema({
   }
 });
 
-// Indexes for performance
-userSchema.index({ email: 1 }, { unique: true });
-userSchema.index({ phone: 1 }, { unique: true });
+// Indexes for performance (email, username, phone already have unique indexes from schema)
+// userSchema.index({ email: 1 }, { unique: true }); // Removed - duplicate
+// userSchema.index({ username: 1 }, { unique: true, sparse: true }); // Removed - duplicate
+// userSchema.index({ phone: 1 }, { unique: true }); // Removed - duplicate
 userSchema.index({ role: 1 });
+userSchema.index({ businessType: 1 });
 userSchema.index({ status: 1 });
 userSchema.index({ emailVerified: 1, phoneVerified: 1 });
 userSchema.index({ createdAt: -1 });
@@ -334,20 +453,37 @@ userSchema.methods.resetFailedAttempts = function() {
 };
 
 /**
- * Add refresh token
+ * Add refresh token - Only one refresh token per user (overwrite existing)
  */
 userSchema.methods.addRefreshToken = function(token, expiresAt, deviceInfo = {}) {
-  // Remove old expired tokens
-  this.refreshTokens = this.refreshTokens.filter(rt => rt.expiresAt > new Date());
-  
-  // Add new token
+  // Clear all existing refresh tokens to ensure only one token per user
+  this.refreshTokens = [];
+
+  // Add the new token as the only token
   this.refreshTokens.push({
     token,
     expiresAt,
-    deviceInfo
+    deviceInfo,
+    createdAt: new Date()
   });
-  
-  return this.save();
+
+  // Use save with retry logic for version conflicts
+  return this.save().catch(async (error) => {
+    if (error.name === 'VersionError' || error.code === 11000) {
+      // Retry once with fresh document
+      const freshUser = await this.constructor.findById(this._id);
+      if (freshUser) {
+        freshUser.refreshTokens = [{
+          token,
+          expiresAt,
+          deviceInfo,
+          createdAt: new Date()
+        }];
+        return freshUser.save();
+      }
+    }
+    throw error;
+  });
 };
 
 /**
@@ -372,26 +508,129 @@ userSchema.methods.removeAllRefreshTokens = function() {
 userSchema.methods.hasPermission = function(permission) {
   const rolePermissions = {
     admin: ['*'], // All permissions
-    restaurant_owner: ['manage_restaurant', 'manage_menu', 'view_orders', 'manage_tables'],
-    zone_admin: ['manage_zone', 'manage_vendors', 'manage_shops', 'view_analytics'],
+    restaurant_owner: ['manage_restaurant', 'manage_menu', 'view_orders', 'manage_tables', 'generate_qr'],
+    zone_admin: ['manage_zone', 'manage_vendors', 'manage_shops', 'view_analytics', 'generate_qr', 'split_orders'],
     zone_shop: ['manage_shop', 'manage_shop_menu', 'view_shop_orders'],
-    zone_vendor: ['view_vendor_data', 'manage_vendor_profile']
+    zone_vendor: ['view_vendor_data', 'manage_vendor_profile'],
+    customer: ['place_order', 'view_order_status', 'provide_feedback']
   };
-  
+
   const userPermissions = rolePermissions[this.role] || [];
   return userPermissions.includes('*') || userPermissions.includes(permission);
+};
+
+// Plan-related Virtual Methods
+
+/**
+ * Check if user has an active plan
+ */
+userSchema.virtual('hasActivePlan').get(function() {
+  return this.planStatus === 'active' &&
+         this.planExpiryDate &&
+         new Date() < this.planExpiryDate;
+});
+
+/**
+ * Check if user's plan is expired
+ */
+userSchema.virtual('isPlanExpired').get(function() {
+  return this.planExpiryDate && new Date() > this.planExpiryDate;
+});
+
+/**
+ * Get days remaining in current plan
+ */
+userSchema.virtual('planDaysRemaining').get(function() {
+  if (!this.planExpiryDate) return null;
+  const diffTime = this.planExpiryDate - new Date();
+  return Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
+});
+
+// Instance Methods for Plan Management
+
+/**
+ * Activate a plan for the user
+ */
+userSchema.methods.activatePlan = async function(planId, expiryDate, paymentId = null) {
+  // Add to plan history
+  this.planHistory.push({
+    planId: this.currentPlanId,
+    startDate: new Date(),
+    endDate: this.planExpiryDate,
+    status: 'expired',
+    paymentId: paymentId
+  });
+
+  // Update current plan
+  this.currentPlanId = planId;
+  this.planExpiryDate = expiryDate;
+  this.planStatus = 'active';
+
+  return this.save();
+};
+
+/**
+ * Expire the current plan
+ */
+userSchema.methods.expirePlan = async function() {
+  if (this.currentPlanId) {
+    // Update plan history
+    const currentPlanHistory = this.planHistory.find(
+      h => h.planId.toString() === this.currentPlanId.toString() && !h.endDate
+    );
+    if (currentPlanHistory) {
+      currentPlanHistory.endDate = new Date();
+      currentPlanHistory.status = 'expired';
+    }
+  }
+
+  // Reset to free plan
+  this.currentPlanId = null;
+  this.planExpiryDate = null;
+  this.planStatus = 'free';
+
+  return this.save();
+};
+
+/**
+ * Check if user can create more menus based on plan limits
+ */
+userSchema.methods.canCreateMenu = async function() {
+  if (!this.currentPlanId) {
+    // Free plan - check default limits
+    return { allowed: false, reason: 'Free plan allows only 1 menu' };
+  }
+
+  if (this.isPlanExpired) {
+    return { allowed: false, reason: 'Plan has expired' };
+  }
+
+  // This would need to check actual menu count vs plan limits
+  // Implementation depends on how menus are counted
+  return { allowed: true };
 };
 
 // Static Methods
 
 /**
- * Find user by email or phone
+ * Find users with expired plans
+ */
+userSchema.statics.findUsersWithExpiredPlans = function() {
+  return this.find({
+    planStatus: 'active',
+    planExpiryDate: { $lt: new Date() }
+  }).populate('currentPlanId');
+};
+
+/**
+ * Find user by email, phone, or username
  */
 userSchema.statics.findByEmailOrPhone = function(identifier) {
   return this.findOne({
     $or: [
       { email: identifier.toLowerCase() },
-      { phone: identifier }
+      { phone: identifier },
+      { username: identifier }
     ]
   });
 };
@@ -464,6 +703,36 @@ userSchema.pre('save', function(next) {
   }
   
   next();
+});
+
+// Post-save middleware to sync profile name with restaurant ownerName
+userSchema.post('save', async function(doc, next) {
+  try {
+    // Only sync if profile name was modified
+    if (this.isModified('profile.name') && this.profile?.name) {
+      // Check if this user is a restaurant owner
+      if (this.role === 'restaurant_owner' && this.businessType === 'restaurant') {
+        const Restaurant = require('./Restaurant');
+        
+        // Find all restaurants owned by this user
+        const restaurants = await Restaurant.find({ ownerId: this._id });
+        
+        // Update ownerName for all restaurants
+        for (const restaurant of restaurants) {
+          restaurant.ownerName = this.profile.name;
+          await restaurant.save();
+        }
+        
+        if (restaurants.length > 0) {
+          console.log(`🔄 Synced profile name '${this.profile.name}' to ${restaurants.length} restaurant(s) for user ${this._id}`);
+        }
+      }
+    }
+    next();
+  } catch (error) {
+    console.error('Error syncing user profile name to restaurants:', error);
+    next();
+  }
 });
 
 // Create and export model

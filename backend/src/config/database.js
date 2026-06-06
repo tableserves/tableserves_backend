@@ -1,205 +1,251 @@
 const mongoose = require('mongoose');
 const { logger } = require('../utils/logger');
 
-// MongoDB Atlas connection string from environment variables
-const MONGODB_URI = process.env.MONGODB_URI || 
-  'mongodb+srv://username:password@cluster.mongodb.net/tableserve?retryWrites=true&w=majority';
-
-// Connection options optimized for MongoDB Atlas
-const mongooseOptions = {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-  maxPoolSize: 10, // Maintain up to 10 socket connections
-  serverSelectionTimeoutMS: 5000, // Keep trying to send operations for 5 seconds
-  socketTimeoutMS: 45000, // Close sockets after 45 seconds of inactivity
-  bufferMaxEntries: 0, // Disable mongoose buffering
-  bufferCommands: false, // Disable mongoose buffering
-  maxIdleTimeMS: 30000, // Close connections after 30 seconds of inactivity
-  family: 4, // Use IPv4, skip trying IPv6
-  retryWrites: true,
-  w: 'majority' // Write concern for data durability
-};
-
 /**
- * Connect to MongoDB Atlas database
- * @returns {Promise<void>}
+ * Production-optimized database configuration
  */
-const connectDatabase = async () => {
-  try {
-    // Validate environment variable
-    if (!process.env.MONGODB_URI) {
-      throw new Error('MONGODB_URI environment variable is not set');
-    }
+class DatabaseManager {
+  constructor() {
+    this.isConnected = false;
+    this.connectionRetries = 0;
+    this.maxRetries = 5;
+    this.retryDelay = 5000; // 5 seconds
+  }
 
-    logger.info('🔄 Connecting to MongoDB Atlas...');
-    
-    // Set mongoose configuration
-    mongoose.set('strictQuery', false);
-    
-    // Connect to MongoDB
-    await mongoose.connect(MONGODB_URI, mongooseOptions);
-    
-    logger.info('✅ MongoDB Atlas connected successfully');
-    logger.info(`📊 Database: ${mongoose.connection.db.databaseName}`);
-    logger.info(`🌐 Host: ${mongoose.connection.host}`);
-    
-    // Handle connection events
-    mongoose.connection.on('error', (error) => {
-      logger.error('❌ MongoDB Atlas connection error:', error);
-    });
-    
-    mongoose.connection.on('disconnected', () => {
-      logger.warn('⚠️  MongoDB Atlas disconnected');
-    });
-    
-    mongoose.connection.on('reconnected', () => {
-      logger.info('✅ MongoDB Atlas reconnected');
-    });
+  /**
+   * Get optimized connection options based on environment
+   */
+  getConnectionOptions() {
+    const isProduction = process.env.NODE_ENV === 'production';
 
-    mongoose.connection.on('connected', () => {
-      logger.info('🔗 MongoDB Atlas connection established');
-    });
+    const baseOptions = {
+  
+      // Index management
+      autoIndex: !isProduction, // Only create indexes automatically in development
+      autoCreate: !isProduction, // Only auto-create collections in development
 
-    mongoose.connection.on('connecting', () => {
-      logger.info('🔄 Connecting to MongoDB Atlas...');
-    });
-    
-    // Graceful shutdown handlers
-    const gracefulShutdown = async () => {
-      try {
-        await mongoose.connection.close();
-        logger.info('🔚 MongoDB Atlas connection closed through app termination');
-        process.exit(0);
-      } catch (error) {
-        logger.error('❌ Error during database disconnection:', error);
-        process.exit(1);
-      }
+      // Connection pool settings - optimized for production
+      maxPoolSize: parseInt(process.env.DB_MAX_POOL_SIZE) || (isProduction ? 20 : 10),
+      minPoolSize: parseInt(process.env.DB_MIN_POOL_SIZE) || (isProduction ? 5 : 2),
+
+      // Timeout settings
+      serverSelectionTimeoutMS: parseInt(process.env.DB_SERVER_SELECTION_TIMEOUT) || (isProduction ? 10000 : 5000),
+      socketTimeoutMS: parseInt(process.env.DB_SOCKET_TIMEOUT) || (isProduction ? 45000 : 30000),
+      connectTimeoutMS: parseInt(process.env.DB_CONNECT_TIMEOUT) || (isProduction ? 10000 : 5000),
+
+      // Heartbeat and monitoring
+      heartbeatFrequencyMS: isProduction ? 10000 : 30000, // More frequent in production
+
+      // Write concern for production
+      writeConcern: {
+        w: isProduction ? 'majority' : 1,
+        j: isProduction, // Journal writes in production
+        wtimeout: isProduction ? 5000 : 0
+      },
+
+      // Read preference
+      readPreference : 'primary',
+
+      // Compression (if supported by MongoDB version)
+      compressors: isProduction ? ['zstd', 'zlib'] : [],
+
+      // Network settings
+      family: 4, // Use IPv4, skip trying IPv6
+
+      // Buffer settings (updated for newer Mongoose versions)
+      bufferCommands: false, // Disable mongoose buffering
+
+      // Retry settings
+      retryWrites: true,
+      retryReads: true
     };
 
-    // Handle different termination signals
-    process.on('SIGINT', gracefulShutdown);
-    process.on('SIGTERM', gracefulShutdown);
-    process.on('SIGUSR2', gracefulShutdown); // For nodemon
-    
-  } catch (error) {
-    logger.error('❌ MongoDB Atlas connection failed:', error.message);
-    
-    // Log specific connection errors
-    if (error.name === 'MongooseServerSelectionError') {
-      logger.error('🔍 Possible causes:');
-      logger.error('  • Network connectivity issues');
-      logger.error('  • Incorrect connection string');
-      logger.error('  • IP address not whitelisted in MongoDB Atlas');
-      logger.error('  • Database user credentials incorrect');
+    if (isProduction) {
+      logger.info('Using production database configuration', {
+        maxPoolSize: baseOptions.maxPoolSize,
+        minPoolSize: baseOptions.minPoolSize,
+        serverSelectionTimeoutMS: baseOptions.serverSelectionTimeoutMS,
+        autoIndex: baseOptions.autoIndex
+      });
     }
-    
-    process.exit(1);
+
+    return baseOptions;
   }
-};
 
-/**
- * Close database connection
- * @returns {Promise<void>}
- */
-const closeDatabaseConnection = async () => {
-  try {
-    await mongoose.connection.close();
-    logger.info('✅ Database connection closed successfully');
-  } catch (error) {
-    logger.error('❌ Error closing database connection:', error);
-    throw error;
+  /**
+   * Connect to MongoDB with retry logic
+   */
+  async connect() {
+    try {
+      const mongoUri = process.env.MONGODB_URI || process.env.DATABASE_URI;
+
+      if (!mongoUri) {
+        throw new Error('MongoDB URI is required. Please set MONGODB_URI environment variable.');
+      }
+
+      const options = this.getConnectionOptions();
+
+      logger.info('Connecting to MongoDB...', {
+        environment: process.env.NODE_ENV,
+        retryAttempt: this.connectionRetries + 1,
+        maxRetries: this.maxRetries
+      });
+
+      const conn = await mongoose.connect(mongoUri, options);
+
+      this.isConnected = true;
+      this.connectionRetries = 0;
+
+      // Set up connection event handlers
+      this.setupConnectionHandlers();
+
+      // Verify connection and setup indexes
+      await this.verifyConnection();
+
+      if (process.env.NODE_ENV === 'production') {
+        logger.info('Skipping index setup in production — existing indexes are already configured.');
+      }
+
+      logger.info('✅ MongoDB Connected Successfully', {
+        host: conn.connection.host,
+        database: conn.connection.name,
+        readyState: conn.connection.readyState,
+        environment: process.env.NODE_ENV
+      });
+
+      return conn;
+
+    } catch (error) {
+      this.isConnected = false;
+      this.connectionRetries++;
+
+      logger.error('MongoDB connection failed:', {
+        error: error.message,
+        retryAttempt: this.connectionRetries,
+        maxRetries: this.maxRetries
+      });
+
+      // Retry logic
+      if (this.connectionRetries < this.maxRetries) {
+        logger.info(`Retrying connection in ${this.retryDelay / 1000} seconds...`);
+        await new Promise(resolve => setTimeout(resolve, this.retryDelay));
+        return this.connect(); // Recursive retry
+      } else {
+        logger.error('Max connection retries exceeded. Exiting...');
+        process.exit(1);
+      }
+    }
   }
-};
 
-/**
- * Check if database is connected
- * @returns {boolean}
- */
-const isDatabaseConnected = () => {
-  return mongoose.connection.readyState === 1;
-};
+  /**
+   * Setup connection event handlers
+   */
+  setupConnectionHandlers() {
+    mongoose.connection.on('connected', () => {
+      logger.info('MongoDB connection established');
+      this.isConnected = true;
+    });
 
-/**
- * Get database connection statistics
- * @returns {Object}
- */
-const getConnectionStats = () => {
-  const conn = mongoose.connection;
-  return {
-    readyState: conn.readyState,
-    host: conn.host,
-    port: conn.port,
-    name: conn.name,
-    collections: Object.keys(conn.collections),
-    models: Object.keys(conn.models)
-  };
-};
+    mongoose.connection.on('error', (error) => {
+      logger.error('MongoDB connection error:', error);
+      this.isConnected = false;
+    });
 
-/**
- * Create database indexes for optimal performance
- * @returns {Promise<void>}
- */
-const createIndexes = async () => {
-  try {
-    logger.info('🔍 Creating database indexes...');
-    
-    const db = mongoose.connection.db;
-    
-    // Users collection indexes
-    await db.collection('users').createIndex({ email: 1 }, { unique: true });
-    await db.collection('users').createIndex({ phone: 1 }, { unique: true });
-    await db.collection('users').createIndex({ role: 1 });
-    
-    // Subscriptions collection indexes
-    await db.collection('subscriptions').createIndex({ userId: 1 });
-    await db.collection('subscriptions').createIndex({ status: 1 });
-    await db.collection('subscriptions').createIndex({ endDate: 1 });
-    
-    // Restaurants collection indexes
-    await db.collection('restaurants').createIndex({ ownerId: 1 });
-    await db.collection('restaurants').createIndex({ active: 1 });
-    
-    // Zones collection indexes
-    await db.collection('zones').createIndex({ adminId: 1 });
-    await db.collection('zones').createIndex({ active: 1 });
-    
-    // Shops collection indexes
-    await db.collection('shops').createIndex({ zoneId: 1 });
-    await db.collection('shops').createIndex({ vendorId: 1 });
-    await db.collection('shops').createIndex({ status: 1 });
-    
-    // MenuCategories collection indexes
-    await db.collection('menucategories').createIndex({ restaurantId: 1 });
-    await db.collection('menucategories').createIndex({ zoneId: 1 });
-    await db.collection('menucategories').createIndex({ active: 1 });
-    
-    // MenuItems collection indexes
-    await db.collection('menuitems').createIndex({ categoryId: 1 });
-    await db.collection('menuitems').createIndex({ restaurantId: 1 });
-    await db.collection('menuitems').createIndex({ zoneId: 1 });
-    await db.collection('menuitems').createIndex({ available: 1 });
-    await db.collection('menuitems').createIndex({ tags: 1 });
-    
-    // Orders collection indexes
-    await db.collection('orders').createIndex({ orderNumber: 1 }, { unique: true });
-    await db.collection('orders').createIndex({ restaurantId: 1 });
-    await db.collection('orders').createIndex({ zoneId: 1 });
-    await db.collection('orders').createIndex({ shopId: 1 });
-    await db.collection('orders').createIndex({ status: 1 });
-    await db.collection('orders').createIndex({ createdAt: -1 });
-    await db.collection('orders').createIndex({ 'customer.phone': 1 });
-    
-    logger.info('✅ Database indexes created successfully');
-  } catch (error) {
-    logger.error('❌ Error creating database indexes:', error);
-    // Don't throw error here as indexes might already exist
+    mongoose.connection.on('disconnected', () => {
+      logger.warn('MongoDB disconnected');
+      this.isConnected = false;
+    });
+
+    mongoose.connection.on('reconnected', () => {
+      logger.info('MongoDB reconnected');
+      this.isConnected = true;
+    });
+
+    // Graceful shutdown
+    process.on('SIGINT', async () => {
+      await this.disconnect();
+      process.exit(0);
+    });
+
+    process.on('SIGTERM', async () => {
+      await this.disconnect();
+      process.exit(0);
+    });
   }
+
+  /**
+   * Verify database connection
+   */
+  async verifyConnection() {
+    try {
+      await mongoose.connection.db.admin().ping();
+      logger.info('Database connection verified');
+    } catch (error) {
+      logger.error('Database connection verification failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Setup production indexes for better performance
+   */
+  async setupProductionIndexes() {
+    try {
+      logger.info('Setting up production database indexes...');
+
+      // Get all models and ensure indexes
+      const models = mongoose.modelNames();
+
+      for (const modelName of models) {
+        const model = mongoose.model(modelName);
+        await model.ensureIndexes();
+        logger.info(`Indexes ensured for model: ${modelName}`);
+      }
+
+      logger.info('✅ Production indexes setup completed');
+    } catch (error) {
+      logger.error('Failed to setup production indexes:', error);
+      // Don't fail the connection for index issues
+    }
+  }
+
+  /**
+   * Graceful disconnect
+   */
+  async disconnect() {
+    try {
+      if (this.isConnected) {
+        await mongoose.connection.close();
+        logger.info('MongoDB connection closed gracefully');
+      }
+    } catch (error) {
+      logger.error('Error closing MongoDB connection:', error);
+    }
+  }
+
+  /**
+   * Get connection status
+   */
+  getStatus() {
+    return {
+      isConnected: this.isConnected,
+      readyState: mongoose.connection.readyState,
+      host: mongoose.connection.host,
+      name: mongoose.connection.name
+    };
+  }
+}
+
+// Create singleton instance
+const databaseManager = new DatabaseManager();
+
+// Legacy function for backward compatibility
+const connectDB = async () => {
+  return databaseManager.connect();
 };
 
 module.exports = {
-  connectDatabase,
-  closeDatabaseConnection,
-  isDatabaseConnected,
-  getConnectionStats,
-  createIndexes
+  connectDatabase: connectDB,
+  databaseManager,
+  DatabaseManager
 };

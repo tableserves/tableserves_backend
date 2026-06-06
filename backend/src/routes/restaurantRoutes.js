@@ -1,5 +1,9 @@
 const express = require('express');
+const { defaultRateLimiter } = require('../middleware/userRateLimit');
 const { authenticate, authorize, checkFeatureAccess, checkResourceOwnership } = require('../middleware/authMiddleware');
+const { ValidationRules, handleValidation } = require('../middleware/validationMiddleware');
+const { createRouteHandler, routeErrorHandler, requestTimer } = require('../middleware/routeErrorHandler');
+const PlanValidationMiddleware = require('../middleware/planValidationMiddleware');
 const {
   getAllRestaurants,
   getRestaurant,
@@ -11,10 +15,22 @@ const {
   removeTable,
   getRestaurantStats,
   toggleRestaurantStatus,
-  getRestaurantBySlug
+  getRestaurantBySlug,
+  getRestaurantByIdPublic,
+  updateRestaurantCredentials,
+  updateRestaurantPassword
 } = require('../controllers/restaurantController');
 
 const router = express.Router();
+
+// Add request timing middleware
+router.use(requestTimer);
+
+// Use the standardized route handler
+const wrapAsync = createRouteHandler;
+
+// Apply rate limiting to all restaurant routes
+router.use(defaultRateLimiter);
 
 /**
  * Public Routes
@@ -25,7 +41,33 @@ const router = express.Router();
  * @desc Get restaurant by slug (public access for menu viewing)
  * @access Public
  */
-router.get('/public/:slug', getRestaurantBySlug);
+router.get('/public/:slug',
+  ValidationRules.validateObjectId('slug'),
+  handleValidation,
+  wrapAsync(getRestaurantBySlug, 'getRestaurantBySlug')
+);
+
+/**
+ * @route GET /api/v1/restaurants/public/id/:id
+ * @desc Get restaurant by ID (public access for checkout)
+ * @access Public
+ */
+router.get('/public/id/:id',
+  ValidationRules.validateObjectId('id'),
+  handleValidation,
+  wrapAsync(getRestaurantByIdPublic, 'getRestaurantByIdPublic')
+);
+
+/**
+ * @route GET /api/v1/restaurants/:id
+ * @desc Direct access to restaurant by ID (public access for QR code scanning)
+ * @access Public
+ */
+router.get('/:id',
+  ValidationRules.validateObjectId('id'),
+  handleValidation,
+  wrapAsync(getRestaurantByIdPublic, 'getRestaurantByIdPublic')
+);
 
 /**
  * Protected Routes - Require Authentication
@@ -36,10 +78,14 @@ router.get('/public/:slug', getRestaurantBySlug);
  * @desc Get all restaurants (admin) or user's restaurants
  * @access Private (admin, restaurant_owner)
  */
-router.get('/', 
-  authenticate, 
+router.get('/',
+  authenticate,
   authorize('admin', 'restaurant_owner'),
-  getAllRestaurants
+  ValidationRules.validatePagination,
+  ValidationRules.validateSearch,
+  ValidationRules.validateSorting,
+  handleValidation,
+  wrapAsync(getAllRestaurants, 'getAllRestaurants')
 );
 
 /**
@@ -47,11 +93,13 @@ router.get('/',
  * @desc Create new restaurant
  * @access Private (admin, restaurant_owner)
  */
-router.post('/', 
-  authenticate, 
+router.post('/',
+  authenticate,
   authorize('admin', 'restaurant_owner'),
   checkFeatureAccess('crudMenu'),
-  createRestaurant
+  ValidationRules.createRestaurant,
+  handleValidation,
+  wrapAsync(createRestaurant, 'createRestaurant')
 );
 
 /**
@@ -59,10 +107,12 @@ router.post('/',
  * @desc Get single restaurant by ID
  * @access Private (admin, restaurant_owner - own restaurants only)
  */
-router.get('/:id', 
-  authenticate, 
+router.get('/:id',
+  authenticate,
   authorize('admin', 'restaurant_owner'),
-  getRestaurant
+  ValidationRules.validateObjectId('id'),
+  handleValidation,
+  wrapAsync(getRestaurant, 'getRestaurant')
 );
 
 /**
@@ -70,11 +120,14 @@ router.get('/:id',
  * @desc Update restaurant
  * @access Private (admin, restaurant_owner - own restaurants only)
  */
-router.put('/:id', 
-  authenticate, 
+router.put('/:id',
+  authenticate,
   authorize('admin', 'restaurant_owner'),
   checkFeatureAccess('crudMenu'),
-  updateRestaurant
+  ValidationRules.validateObjectId('id'),
+  ValidationRules.updateRestaurant,
+  handleValidation,
+  wrapAsync(updateRestaurant, 'updateRestaurant')
 );
 
 /**
@@ -82,10 +135,12 @@ router.put('/:id',
  * @desc Delete restaurant (soft delete)
  * @access Private (admin, restaurant_owner - own restaurants only)
  */
-router.delete('/:id', 
-  authenticate, 
+router.delete('/:id',
+  authenticate,
   authorize('admin', 'restaurant_owner'),
-  deleteRestaurant
+  ValidationRules.validateObjectId('id'),
+  handleValidation,
+  wrapAsync(deleteRestaurant, 'deleteRestaurant')
 );
 
 /**
@@ -93,10 +148,12 @@ router.delete('/:id',
  * @desc Toggle restaurant active status
  * @access Private (admin, restaurant_owner - own restaurants only)
  */
-router.patch('/:id/toggle-status', 
-  authenticate, 
+router.patch('/:id/toggle-status',
+  authenticate,
   authorize('admin', 'restaurant_owner'),
-  toggleRestaurantStatus
+  ValidationRules.validateObjectId('id'),
+  handleValidation,
+  wrapAsync(toggleRestaurantStatus, 'toggleRestaurantStatus')
 );
 
 /**
@@ -104,11 +161,13 @@ router.patch('/:id/toggle-status',
  * @desc Get restaurant statistics
  * @access Private (admin, restaurant_owner - own restaurants only)
  */
-router.get('/:id/stats', 
-  authenticate, 
+router.get('/:id/stats',
+  authenticate,
   authorize('admin', 'restaurant_owner'),
   checkFeatureAccess('analytics'),
-  getRestaurantStats
+  ValidationRules.validateObjectId('id'),
+  handleValidation,
+  wrapAsync(getRestaurantStats, 'getRestaurantStats')
 );
 
 /**
@@ -120,11 +179,14 @@ router.get('/:id/stats',
  * @desc Add table to restaurant
  * @access Private (admin, restaurant_owner - own restaurants only)
  */
-router.post('/:id/tables', 
-  authenticate, 
+router.post('/:id/tables',
+  authenticate,
   authorize('admin', 'restaurant_owner'),
   checkFeatureAccess('qrGeneration'),
-  addTable
+  PlanValidationMiddleware ? PlanValidationMiddleware.checkTableCreationLimit() : (req, res, next) => next(),
+  ValidationRules.validateObjectId('id'),
+  handleValidation,
+  wrapAsync(addTable, 'addTable')
 );
 
 /**
@@ -132,10 +194,13 @@ router.post('/:id/tables',
  * @desc Update restaurant table
  * @access Private (admin, restaurant_owner - own restaurants only)
  */
-router.put('/:id/tables/:tableId', 
-  authenticate, 
+router.put('/:id/tables/:tableId',
+  authenticate,
   authorize('admin', 'restaurant_owner'),
-  updateTable
+  ValidationRules.validateObjectId('id'),
+  ValidationRules.validateObjectId('tableId'),
+  handleValidation,
+  wrapAsync(updateTable, 'updateTable')
 );
 
 /**
@@ -143,10 +208,47 @@ router.put('/:id/tables/:tableId',
  * @desc Remove table from restaurant
  * @access Private (admin, restaurant_owner - own restaurants only)
  */
-router.delete('/:id/tables/:tableId', 
-  authenticate, 
+router.delete('/:id/tables/:tableId',
+  authenticate,
   authorize('admin', 'restaurant_owner'),
-  removeTable
+  ValidationRules.validateObjectId('id'),
+  ValidationRules.validateObjectId('tableId'),
+  handleValidation,
+  wrapAsync(removeTable, 'removeTable')
 );
+
+/**
+ * @route PUT /api/v1/restaurants/:id/credentials
+ * @desc Update restaurant owner credentials
+ * @access Private (admin only)
+ */
+router.put('/:id/credentials',
+  authenticate,
+  authorize('admin'),
+  ValidationRules.validateObjectId('id'),
+  handleValidation,
+  wrapAsync(updateRestaurantCredentials, 'updateRestaurantCredentials')
+);
+
+/**
+ * @route PATCH /api/v1/restaurants/:id/password
+ * @desc Update restaurant owner password
+ * @access Private (admin, restaurant_owner - own restaurants only)
+ */
+router.patch('/:id/password',
+  authenticate,
+  authorize('admin', 'restaurant_owner'),
+  ValidationRules.validateObjectId('id'),
+  [
+    require('express-validator').body('newPassword')
+      .isLength({ min: 6 })
+      .withMessage('Password must be at least 6 characters long')
+  ],
+  handleValidation,
+  wrapAsync(updateRestaurantPassword, 'updateRestaurantPassword')
+);
+
+// Apply the enhanced error handling middleware
+router.use(routeErrorHandler);
 
 module.exports = router;

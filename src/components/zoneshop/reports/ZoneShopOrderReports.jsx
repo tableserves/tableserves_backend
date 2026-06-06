@@ -15,6 +15,8 @@ import {
   FaExclamationTriangle
 } from 'react-icons/fa';
 import ZoneShopLayout from '../ZoneShopLayout';
+import ApiService from '../../../shared/api/ApiService';
+import { ErrorBoundary } from '../../../shared/errors/ErrorBoundary';
 
 const ZoneShopOrderReports = () => {
   const { zoneId, shopId } = useParams();
@@ -24,34 +26,58 @@ const ZoneShopOrderReports = () => {
   const [statusFilter, setStatusFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
-
-
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    const loadOrders = () => {
+    const loadOrders = async () => {
       setLoading(true);
+      setError(null);
       try {
-        // Load real order data from localStorage
-        const orderData = JSON.parse(localStorage.getItem(`tableserve_zone_${zoneId}_shop_${shopId}_orders`) || '[]');
+        console.log('📊 Zone Shop Reports: Loading orders for:', { zoneId, shopId });
+        const response = await ApiService.getShopOrders(zoneId, shopId);
+        console.log('📊 Zone Shop Reports: API response:', response);
+        
+        // Ensure we always have an array
+        const orderData = Array.isArray(response) ? response : 
+                         (Array.isArray(response?.data) ? response.data : []);
+        
+        console.log('📊 Zone Shop Reports: Processed orders:', { 
+          orderCount: orderData.length,
+          orders: orderData 
+        });
+        
         setOrders(orderData);
         setFilteredOrders(orderData);
-      } catch (error) {
-        console.error('Error loading order data:', error);
+      } catch (err) {
+        console.error('❌ Zone Shop Reports: Failed to load orders:', err);
+        setError('Failed to load order data: ' + (err.message || 'Unknown error'));
         setOrders([]);
         setFilteredOrders([]);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
 
-    loadOrders();
+    if (zoneId && shopId) {
+      loadOrders();
+    } else {
+      setError('Missing zone or shop information');
+      setLoading(false);
+    }
   }, [zoneId, shopId]);
 
   useEffect(() => {
     // Filter orders based on search term and status
     let filtered = orders.filter(order => {
-      const matchesSearch = order.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           order.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           order.tableNumber.toLowerCase().includes(searchTerm.toLowerCase());
+      // Safely handle potentially undefined properties
+      const orderId = (order.orderNumber || order.id || order._id || '').toString();
+      const customerName = order.customerName || order.customer?.name || '';
+      const tableNumber = (order.tableNumber || order.table || '').toString();
+      
+      const searchLower = searchTerm.toLowerCase();
+      const matchesSearch = orderId.toLowerCase().includes(searchLower) ||
+                           customerName.toLowerCase().includes(searchLower) ||
+                           tableNumber.toLowerCase().includes(searchLower);
       const matchesStatus = statusFilter === 'all' || order.status === statusFilter;
       return matchesSearch && matchesStatus;
     });
@@ -89,23 +115,52 @@ const ZoneShopOrderReports = () => {
   };
 
   const formatTime = (timeString) => {
-    return new Date(timeString).toLocaleTimeString('en-IN', {
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+    try {
+      if (!timeString) return 'N/A';
+      const date = new Date(timeString);
+      if (isNaN(date.getTime())) return 'N/A';
+      return date.toLocaleTimeString('en-IN', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
+      });
+    } catch (error) {
+      console.warn('Error formatting time:', error);
+      return 'N/A';
+    }
+  };
+
+  const formatDate = (timeString) => {
+    try {
+      if (!timeString) return 'N/A';
+      const date = new Date(timeString);
+      if (isNaN(date.getTime())) return 'N/A';
+      return date.toLocaleDateString('en-IN', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric'
+      });
+    } catch (error) {
+      console.warn('Error formatting date:', error);
+      return 'N/A';
+    }
   };
 
   const calculateStats = () => {
-    const completed = filteredOrders.filter(order => order.status === 'completed');
-    const totalRevenue = completed.reduce((sum, order) => sum + order.total, 0);
-    const avgOrderValue = completed.length > 0 ? totalRevenue / completed.length : 0;
+    // Ensure filteredOrders is always an array
+    const safeOrders = Array.isArray(filteredOrders) ? filteredOrders : [];
+    
+    const completed = safeOrders.filter(order => order.status === 'completed');
+    const totalRevenue = completed.reduce((sum, order) => {
+      const orderTotal = order.total || order.pricing?.total || 0;
+      return sum + Number(orderTotal);
+    }, 0);
 
     return {
-      totalOrders: filteredOrders.length,
+      totalOrders: safeOrders.length,
       completedOrders: completed.length,
       totalRevenue,
-      avgOrderValue,
-      cancelledOrders: filteredOrders.filter(order => order.status === 'cancelled').length
+      cancelledOrders: safeOrders.filter(order => order.status === 'cancelled').length
     };
   };
 
@@ -114,16 +169,30 @@ const ZoneShopOrderReports = () => {
   const exportToCSV = () => {
     const csvContent = [
       ['Order ID', 'Customer', 'Table', 'Items', 'Total', 'Status', 'Order Time', 'Payment Method'],
-      ...filteredOrders.map(order => [
-        order.id,
-        order.customerName,
-        order.tableNumber,
-        order.items.map(item => `${item.name} x${item.quantity}`).join('; '),
-        order.total,
-        order.status,
-        new Date(order.orderTime).toLocaleString(),
-        order.paymentMethod
-      ])
+      ...filteredOrders.map(order => {
+        // Normalize order data for CSV export
+        const orderId = order.orderNumber || order.id || order._id || 'N/A';
+        const customerName = order.customerName || order.customer?.name || 'Unknown';
+        const tableNumber = order.tableNumber || order.table || '1';
+        const items = Array.isArray(order.items) 
+          ? order.items.map(item => `${item.name || 'Unknown Item'} x${item.quantity || 1}`).join('; ')
+          : 'No items';
+        const total = order.total || order.pricing?.total || 0;
+        const status = order.status || 'pending';
+        const orderTime = order.orderTime || order.createdAt || new Date();
+        const paymentMethod = order.payment?.method || 'Cash';
+        
+        return [
+          orderId,
+          customerName,
+          tableNumber,
+          items,
+          total,
+          status,
+          new Date(orderTime).toLocaleString(),
+          paymentMethod
+        ];
+      })
     ].map(row => row.join(',')).join('\n');
 
     const blob = new Blob([csvContent], { type: 'text/csv' });
@@ -149,8 +218,15 @@ const ZoneShopOrderReports = () => {
   }
 
   return (
-    <ZoneShopLayout>
+    <ErrorBoundary>
+      <ZoneShopLayout>
       <div className="space-y-6">
+        {error && (
+          <div className="bg-status-error/10 border border-status-error/30 rounded-lg p-4 mb-4">
+            <p className="text-status-error font-raleway">{error}</p>
+          </div>
+        )}
+
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -171,7 +247,7 @@ const ZoneShopOrderReports = () => {
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -223,21 +299,6 @@ const ZoneShopOrderReports = () => {
             className="admin-card p-4 rounded-xl"
           >
             <div className="flex items-center space-x-3">
-              <FaRupeeSign className="text-blue-500 text-xl" />
-              <div>
-                <p className="text-2xl font-fredoka text-theme-text-primary">₹{Math.round(stats.avgOrderValue)}</p>
-                <p className="text-theme-text-secondary font-raleway text-sm">Avg Order</p>
-              </div>
-            </div>
-          </motion.div>
-
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.4 }}
-            className="admin-card p-4 rounded-xl"
-          >
-            <div className="flex items-center space-x-3">
               <FaTimesCircle className="text-red-500 text-xl" />
               <div>
                 <p className="text-2xl font-fredoka text-theme-text-primary">{stats.cancelledOrders}</p>
@@ -255,7 +316,7 @@ const ZoneShopOrderReports = () => {
                 <FaSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-theme-text-tertiary" />
                 <input
                   type="text"
-                  placeholder="Search orders, customers, tables..."
+                  placeholder="Search by order number, customer name, or table..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="w-full pl-10 pr-4 py-2 border border-theme-border-primary rounded-lg bg-theme-bg-secondary text-theme-text-primary focus:outline-none focus:ring-2 focus:ring-theme-accent-primary"
@@ -304,58 +365,74 @@ const ZoneShopOrderReports = () => {
                   <th className="text-left p-4 font-raleway font-medium text-theme-text-primary">Items</th>
                   <th className="text-left p-4 font-raleway font-medium text-theme-text-primary">Total</th>
                   <th className="text-left p-4 font-raleway font-medium text-theme-text-primary">Status</th>
-                  <th className="text-left p-4 font-raleway font-medium text-theme-text-primary">Time</th>
+                  <th className="text-left p-4 font-raleway font-medium text-theme-text-primary">Order Time</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredOrders.map((order, index) => (
-                  <motion.tr
-                    key={order.id}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: index * 0.1 }}
-                    className="border-b border-theme-border-primary hover:bg-theme-bg-hover"
-                  >
-                    <td className="p-4">
-                      <div>
-                        <p className="font-raleway font-medium text-theme-text-primary">{order.id}</p>
-                        <p className="text-sm text-theme-text-tertiary">{order.tableNumber}</p>
-                      </div>
-                    </td>
-                    <td className="p-4">
-                      <p className="font-raleway text-theme-text-primary">{order.customerName}</p>
-                      <p className="text-sm text-theme-text-tertiary capitalize">{order.paymentMethod}</p>
-                    </td>
-                    <td className="p-4">
-                      <div className="space-y-1">
-                        {order.items.map((item, idx) => (
-                          <p key={idx} className="text-sm text-theme-text-secondary">
-                            {item.name} x{item.quantity}
-                          </p>
-                        ))}
-                      </div>
-                    </td>
-                    <td className="p-4">
-                      <p className="font-raleway font-medium text-theme-text-primary">₹{order.total}</p>
-                    </td>
-                    <td className="p-4">
-                      <div className="flex items-center space-x-2">
-                        {getStatusIcon(order.status)}
-                        <span className={`px-2 py-1 rounded-full text-xs font-raleway capitalize ${getStatusColor(order.status)}`}>
-                          {order.status}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="p-4">
-                      <p className="text-sm text-theme-text-primary">{formatTime(order.orderTime)}</p>
-                      {order.completedTime && (
+                {filteredOrders.map((order, index) => {
+                  // Normalize order data for safe rendering
+                  const normalizedOrder = {
+                    id: order.id || order._id || `Order-${index + 1}`,
+                    orderNumber: order.orderNumber || order.order_number || order.orderNum || order.number || order.id || order._id || `#${index + 1}`,
+                    customerName: order.customerName || order.customer?.name || 'Unknown Customer',
+                    tableNumber: order.tableNumber || order.table || '1',
+                    items: Array.isArray(order.items) ? order.items : [],
+                    total: order.total || order.pricing?.total || 0,
+                    status: order.status || 'pending',
+                    orderTime: order.orderTime || order.createdAt || order.timing?.orderPlaced || new Date(),
+                    paymentMethod: order.payment?.method || 'Cash'
+                  };
+                  
+                  return (
+                    <motion.tr
+                      key={normalizedOrder.id}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: index * 0.1 }}
+                      className="border-b border-theme-border-primary hover:bg-theme-bg-hover"
+                    >
+                      <td className="p-4">
+                        <div>
+                          <p className="font-raleway font-medium text-theme-text-primary text-base">{normalizedOrder.orderNumber}</p>
+                          <p className="text-sm text-theme-text-tertiary">Table {normalizedOrder.tableNumber}</p>
+                        </div>
+                      </td>
+                      <td className="p-4">
+                        <p className="font-raleway text-theme-text-primary">{normalizedOrder.customerName}</p>
+                        <p className="text-sm text-theme-text-tertiary capitalize">{normalizedOrder.paymentMethod}</p>
+                      </td>
+                      <td className="p-4">
+                        <div className="space-y-1">
+                          {normalizedOrder.items.map((item, idx) => (
+                            <p key={idx} className="text-sm text-theme-text-secondary">
+                              {item.name || 'Unknown Item'} x{item.quantity || 1}
+                            </p>
+                          ))}
+                          {normalizedOrder.items.length === 0 && (
+                            <p className="text-sm text-theme-text-tertiary">No items</p>
+                          )}
+                        </div>
+                      </td>
+                      <td className="p-4">
+                        <p className="font-raleway font-medium text-theme-text-primary">₹{normalizedOrder.total.toLocaleString('en-IN')}</p>
+                      </td>
+                      <td className="p-4">
+                        <div className="flex items-center space-x-2">
+                          {getStatusIcon(normalizedOrder.status)}
+                          <span className={`px-2 py-1 rounded-full text-xs font-raleway capitalize ${getStatusColor(normalizedOrder.status)}`}>
+                            {normalizedOrder.status}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="p-4">
+                        <p className="text-sm text-theme-text-primary font-medium">{formatTime(normalizedOrder.orderTime)}</p>
                         <p className="text-xs text-theme-text-tertiary">
-                          Completed: {formatTime(order.completedTime)}
+                          {formatDate(normalizedOrder.orderTime)}
                         </p>
-                      )}
-                    </td>
-                  </motion.tr>
-                ))}
+                      </td>
+                    </motion.tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -374,7 +451,8 @@ const ZoneShopOrderReports = () => {
           </div>
         )}
       </div>
-    </ZoneShopLayout>
+      </ZoneShopLayout>
+    </ErrorBoundary>
   );
 };
 

@@ -10,7 +10,7 @@ export const logActivity = createAsyncThunk(
         id: Date.now().toString(),
         ...activityData,
         timestamp: activityData.timestamp || new Date().toISOString(),
-        ip: '192.168.1.1', // Would be actual IP
+        ip: '192.168.1.25', // Would be actual IP
         userAgent: navigator.userAgent
       };
 

@@ -20,10 +20,10 @@ const ThemeToggle = ({
   const currentTheme = useSelector(selectTheme);
   const isTransitioning = useSelector(selectIsThemeTransitioning);
 
-  // Initialize theme on component mount
+  // Initialize theme on component mount - only once
   useEffect(() => {
     dispatch(initializeTheme());
-  }, [dispatch]);
+  }, []); // Empty dependency array - only run once
 
   // Handle transition completion
   useEffect(() => {

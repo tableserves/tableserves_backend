@@ -160,10 +160,9 @@ class OrderProcessingService {
   // Handle Food Street (Multi-Vendor Zone) Mode
   static processZoneOrder(orderData) {
     const {
-      restaurantId: zoneId,
+      zoneId,
       tableId,
-      vendorBreakdown,
-      paymentModel,
+      items, // This should be the items directly, not vendorBreakdown
       grandTotal,
       paymentMethod,
       specialInstructions,
@@ -180,22 +179,15 @@ class OrderProcessingService {
       zoneId,
       tableId,
       sessionId,
-      vendorCount: vendorBreakdown.length,
-      totalVendorOrders: vendorBreakdown.length,
+      // For zone orders, we don't have vendorBreakdown in the same way
+      // We'll group items by shop on the backend
+      itemCount: items.length,
       grandTotal,
       paymentMethod,
-      paymentModel,
       specialInstructions,
-      status: orderData.status || 'preparing', // Default to 'preparing' instead of 'ordered'
-      vendorBreakdown: vendorBreakdown.map(vendor => ({
-        vendorId: vendor.vendorId,
-        vendorName: vendor.vendorName,
-        itemCount: vendor.items.length,
-        subtotal: vendor.subtotal,
-        status: vendor.status
-      })),
+      status: orderData.status || 'confirmed', // Default to 'confirmed' for zone orders
       statusHistory: orderData.statusHistory || [{
-        status: orderData.status || 'preparing',
+        status: orderData.status || 'confirmed',
         timestamp,
         updatedBy: 'customer'
       }],
@@ -206,59 +198,14 @@ class OrderProcessingService {
     // Store zone order for zone admin dashboard
     this.storeZoneOrder(zoneId, zoneOrder);
 
-    // Create individual vendor orders
-    const vendorOrders = vendorBreakdown.map(vendor => {
-      const vendorOrder = {
-        orderId: `${orderId}_${vendor.vendorId}`,
-        parentOrderId: orderId,
-        vendorId: vendor.vendorId,
-        vendorName: vendor.vendorName,
-        zoneId,
-        tableId,
-        sessionId,
-        items: vendor.items.map(item => ({
-          itemId: item.id,
-          name: item.name,
-          price: item.price,
-          quantity: item.quantity,
-          specialInstructions: item.specialInstructions,
-          subtotal: item.price * item.quantity
-        })),
-        totalItems: vendor.items.reduce((sum, item) => sum + item.quantity, 0),
-        subtotal: vendor.subtotal,
-        paymentMethod,
-        paymentModel,
-        paymentStatus: paymentModel === 'shop-wise' ? 'pending' : 'auto-split',
-        status: orderData.status || 'preparing', // Use same status as main order
-        statusHistory: [{
-          status: orderData.status || 'preparing',
-          timestamp,
-          updatedBy: 'customer'
-        }],
-        createdAt: timestamp,
-        updatedAt: timestamp
-      };
-
-      // Store order for individual vendor dashboard
-      this.storeVendorOrder(vendor.vendorId, vendorOrder);
-
-      // Update vendor analytics
-      this.updateVendorAnalytics(vendor.vendorId, {
-        orderId: vendorOrder.orderId,
-        revenue: vendor.subtotal,
-        itemCount: vendorOrder.totalItems,
-        timestamp
-      });
-
-      return vendorOrder;
-    });
+    // For zone orders, we don't create individual vendor orders here
+    // That's handled by the backend ZoneOrderSplittingService
 
     // Update zone analytics
     this.updateZoneAnalytics(zoneId, {
       orderId,
       revenue: grandTotal,
-      vendorCount: vendorBreakdown.length,
-      totalItems: vendorOrders.reduce((sum, order) => sum + order.totalItems, 0),
+      itemCount: items.length,
       timestamp
     });
 
@@ -266,8 +213,7 @@ class OrderProcessingService {
       success: true,
       orderId,
       zoneOrder,
-      vendorOrders,
-      message: `Order split among ${vendorBreakdown.length} vendors`
+      message: 'Zone order processed successfully'
     };
   }
 

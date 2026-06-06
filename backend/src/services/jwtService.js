@@ -39,7 +39,7 @@ const generateAccessToken = (payload) => {
       accessTokenPayload,
       process.env.JWT_SECRET,
       {
-        expiresIn: process.env.JWT_EXPIRE || '15m',
+        expiresIn: process.env.JWT_EXPIRE || '3y', // Re-enabled expiration
         issuer: 'tableserve-api',
         audience: 'tableserve-client'
       }
@@ -73,7 +73,7 @@ const generateRefreshToken = (payload) => {
       refreshTokenPayload,
       process.env.JWT_REFRESH_SECRET,
       {
-        expiresIn: process.env.JWT_REFRESH_EXPIRE || '7d',
+        expiresIn: process.env.JWT_REFRESH_EXPIRE || '3y', // Re-enabled expiration
         issuer: 'tableserve-api',
         audience: 'tableserve-client'
       }
@@ -231,7 +231,8 @@ const getTokenExpiration = (token) => {
 const isTokenExpired = (token) => {
   try {
     const expiration = getTokenExpiration(token);
-    if (!expiration) return true;
+    // If no expiration set, token never expires
+    if (!expiration) return false;
     
     return new Date() > expiration;
   } catch (error) {

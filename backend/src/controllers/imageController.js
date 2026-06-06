@@ -1,4 +1,5 @@
-const { catchAsync, APIError } = require('../middleware/errorHandler');
+const { APIError } = require('../middleware/errorHandler');
+const catchAsync = require('../utils/catchAsync');
 const {
   uploadImage,
   uploadMultipleImages,

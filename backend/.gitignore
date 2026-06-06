@@ -8,6 +8,8 @@ yarn-error.log*
 .env
 .env.local
 .env.production
+.env.production.example
+.env.*\r
 
 # Runtime data
 pids
@@ -102,11 +104,6 @@ Thumbs.db
 
 # PM2 files
 ecosystem.config.js
-
-# Docker files
-Dockerfile
-.dockerignore
-docker-compose.yml
 
 # Test files
 coverage/

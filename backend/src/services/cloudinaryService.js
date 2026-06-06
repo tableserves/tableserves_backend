@@ -301,6 +301,26 @@ const transformationPresets = {
     crop: 'scale',
     quality: 'auto:best',
     format: 'png'
+  },
+
+  // Restaurant profile images
+  restaurant: {
+    width: 600,
+    height: 400,
+    crop: 'fill',
+    gravity: 'center',
+    quality: 'auto:good',
+    format: 'webp'
+  },
+
+  // Zone/shop images
+  zone: {
+    width: 500,
+    height: 350,
+    crop: 'fill',
+    gravity: 'center',
+    quality: 'auto:good',
+    format: 'webp'
   }
 };
 

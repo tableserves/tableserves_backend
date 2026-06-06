@@ -5,204 +5,26 @@
  * - orderSlice (single order management)
  * - ordersSlice (multiple orders management)
  * 
- * This reduces 2 slices to 1 unified order management slice
+ * Updated to use RTK Query for data operations while maintaining real-time functionality
  */
 
-import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
+import { createSlice } from '@reduxjs/toolkit';
 import { createSelector } from 'reselect';
-import OrderProcessingService from '../../services/OrderProcessingService';
 import logger from '../../services/LoggingService';
 
-// ===== ASYNC THUNKS =====
+// Note: Data operations are now handled by RTK Query hooks from ordersApi
+// This slice focuses on UI state management and real-time event handling
 
-// Fetch orders based on user role and entity
-export const fetchOrders = createAsyncThunk(
-  'orders/fetchOrders',
-  async ({ role, entityId, filters = {} }, { rejectWithValue }) => {
-    try {
-      let orders;
-      
-      switch (role) {
-        case 'admin':
-          orders = OrderProcessingService.getAllOrders();
-          break;
-        case 'restaurant_owner':
-          orders = OrderProcessingService.getOrdersForRestaurant(entityId);
-          break;
-        case 'zone_admin':
-          orders = OrderProcessingService.getOrdersForZone(entityId);
-          break;
-        case 'zone_shop':
-        case 'zone_vendor':
-          orders = OrderProcessingService.getOrdersForShop(entityId);
-          break;
-        default:
-          throw new Error(`Invalid role for fetching orders: ${role}`);
-      }
-
-      // Apply filters if provided
-      if (filters.status) {
-        orders = orders.filter(order => order.status === filters.status);
-      }
-      
-      if (filters.dateRange) {
-        const { startDate, endDate } = filters.dateRange;
-        orders = orders.filter(order => {
-          const orderDate = new Date(order.createdAt);
-          return orderDate >= startDate && orderDate <= endDate;
-        });
-      }
-
-      logger.info('Orders fetched successfully', { 
-        role, 
-        entityId, 
-        count: orders.length, 
-        filters 
-      }, 'ordersSlice');
-
-      return { orders, role, entityId, filters };
-    } catch (error) {
-      logger.error('Failed to fetch orders', error, 'ordersSlice');
-      return rejectWithValue(error.message);
-    }
-  }
-);
-
-// Create a new order
-export const createOrder = createAsyncThunk(
-  'orders/createOrder',
-  async (orderData, { rejectWithValue }) => {
-    try {
-      // Process order through OrderProcessingService
-      let result;
-      
-      if (orderData.restaurantId) {
-        // Restaurant order
-        result = OrderProcessingService.processRestaurantOrder(orderData);
-      } else if (orderData.zoneId) {
-        // Zone order (multiple vendors)
-        result = OrderProcessingService.processZoneOrder(orderData);
-      } else {
-        throw new Error('Order must have either restaurantId or zoneId');
-      }
-
-      if (result.success) {
-        logger.info('Order created successfully', { 
-          orderId: result.orderId,
-          type: orderData.restaurantId ? 'restaurant' : 'zone'
-        }, 'ordersSlice');
-        
-        return result;
-      } else {
-        throw new Error(result.message || 'Failed to create order');
-      }
-    } catch (error) {
-      logger.error('Failed to create order', error, 'ordersSlice');
-      return rejectWithValue(error.message);
-    }
-  }
-);
-
-// Update order status
-export const updateOrderStatus = createAsyncThunk(
-  'orders/updateOrderStatus',
-  async ({ orderId, newStatus, user, estimatedTime }, { rejectWithValue }) => {
-    try {
-      const updatedOrder = OrderProcessingService.updateOrderStatus(
-        orderId,
-        newStatus,
-        user.name,
-        user.role,
-        user.role === 'restaurant_owner' ? user.restaurantId : user.zoneId,
-        estimatedTime
-      );
-
-      if (updatedOrder) {
-        logger.info('Order status updated successfully', { 
-          orderId, 
-          newStatus, 
-          updatedBy: user.name 
-        }, 'ordersSlice');
-        
-        return updatedOrder;
-      } else {
-        throw new Error('Order not found or update failed');
-      }
-    } catch (error) {
-      logger.error('Failed to update order status', error, 'ordersSlice');
-      return rejectWithValue(error.message);
-    }
-  }
-);
-
-// Fetch live orders (for real-time dashboards)
-export const fetchLiveOrders = createAsyncThunk(
-  'orders/fetchLiveOrders',
-  async ({ role, entityId }, { rejectWithValue }) => {
-    try {
-      let liveOrders;
-      
-      switch (role) {
-        case 'restaurant_owner':
-          liveOrders = OrderProcessingService.getLiveOrdersForRestaurant(entityId);
-          break;
-        case 'zone_admin':
-          liveOrders = OrderProcessingService.getLiveOrdersForZone(entityId);
-          break;
-        case 'zone_shop':
-        case 'zone_vendor':
-          liveOrders = OrderProcessingService.getLiveOrdersForShop(entityId);
-          break;
-        default:
-          throw new Error(`Invalid role for fetching live orders: ${role}`);
-      }
-
-      return { liveOrders, role, entityId };
-    } catch (error) {
-      logger.error('Failed to fetch live orders', error, 'ordersSlice');
-      return rejectWithValue(error.message);
-    }
-  }
-);
-
-// Get order details by ID
-export const fetchOrderDetails = createAsyncThunk(
-  'orders/fetchOrderDetails',
-  async ({ orderId }, { rejectWithValue }) => {
-    try {
-      const orderDetails = OrderProcessingService.getOrderById(orderId);
-      
-      if (!orderDetails) {
-        throw new Error('Order not found');
-      }
-
-      return orderDetails;
-    } catch (error) {
-      logger.error('Failed to fetch order details', error, 'ordersSlice');
-      return rejectWithValue(error.message);
-    }
-  }
-);
-
-// Cancel an order
-export const cancelOrder = createAsyncThunk(
-  'orders/cancelOrder',
-  async ({ orderId, reason, user }, { rejectWithValue }) => {
-    try {
-      const cancelledOrder = OrderProcessingService.cancelOrder(orderId, reason, user.name);
-      
-      if (cancelledOrder) {
-        logger.info('Order cancelled successfully', { orderId, reason, cancelledBy: user.name }, 'ordersSlice');
-        return cancelledOrder;
-      } else {
-        throw new Error('Failed to cancel order');
-      }
-    } catch (error) {
-      logger.error('Failed to cancel order', error, 'ordersSlice');
-      return rejectWithValue(error.message);
-    }
-  }
-);
+// ===== LEGACY THUNKS (DEPRECATED) =====
+// These thunks have been replaced by RTK Query hooks:
+// - fetchOrders -> useGetOrdersQuery
+// - createOrder -> useCreateOrderMutation
+// - updateOrderStatus -> useUpdateOrderStatusMutation
+// - fetchLiveOrders -> useGetLiveOrdersQuery
+// - fetchOrderDetails -> useGetOrderQuery
+// - cancelOrder -> useCancelOrderMutation
+//
+// Components should now use RTK Query hooks directly instead of dispatching these thunks
 
 // ===== SLICE DEFINITION =====
 
@@ -364,138 +186,152 @@ export const ordersSlice = createSlice({
         state.lastUpdateTime = lastUpdateTime;
       }
     },
+    
+    // Real-time event handlers
+    orderCreated: (state, action) => {
+      const newOrder = action.payload;
+      
+      // Add to beginning of orders array
+      state.orders.unshift(newOrder);
+      
+      // Add to live orders if it's a new/active order
+      if (['pending', 'confirmed', 'preparing'].includes(newOrder.status)) {
+        state.liveOrders.unshift(newOrder);
+      }
+      
+      state.lastUpdateTime = new Date().toISOString();
+    },
+    
+    orderUpdated: (state, action) => {
+      const updatedOrder = action.payload;
+      const orderId = updatedOrder.orderId || updatedOrder.id;
+      
+      // Update in orders array
+      const orderIndex = state.orders.findIndex(order => order.id === orderId);
+      if (orderIndex !== -1) {
+        state.orders[orderIndex] = { ...state.orders[orderIndex], ...updatedOrder };
+      }
+      
+      // Update in live orders array
+      const liveOrderIndex = state.liveOrders.findIndex(order => order.id === orderId);
+      if (liveOrderIndex !== -1) {
+        state.liveOrders[liveOrderIndex] = { ...state.liveOrders[liveOrderIndex], ...updatedOrder };
+        
+        // Remove from live orders if completed or cancelled
+        if (['completed', 'cancelled'].includes(updatedOrder.status)) {
+          state.liveOrders.splice(liveOrderIndex, 1);
+        }
+      }
+      
+      // Update current order if it matches
+      if (state.currentOrder && state.currentOrder.id === orderId) {
+        state.currentOrder = { ...state.currentOrder, ...updatedOrder };
+      }
+      
+      state.lastUpdateTime = new Date().toISOString();
+    },
+    
+    statusChanged: (state, action) => {
+      // Safely handle action payload that might be undefined
+      if (!action.payload) {
+        console.warn('statusChanged called with undefined payload');
+        return;
+      }
+      
+      // Handle different data structures from backend
+      const { orderId, oldStatus, newStatus, estimatedTime, timestamp, orderNumber, _id } = action.payload;
+      
+      // Use the most reliable ID available
+      const actualOrderId = orderId || _id || action.payload.id;
+      
+      // Validate required fields
+      if (!actualOrderId || !newStatus) {
+        console.warn('statusChanged called with invalid payload:', action.payload);
+        return;
+      }
+      
+      console.log('🔄 Redux statusChanged triggered:', { actualOrderId, newStatus, oldStatus, orderNumber });
+      
+      // Update in orders array
+      const orderIndex = state.orders.findIndex(order => 
+        order.id === actualOrderId || 
+        order._id === actualOrderId || 
+        order.orderId === actualOrderId ||
+        (orderNumber && order.orderNumber === orderNumber)
+      );
+      
+      if (orderIndex !== -1) {
+        console.log('✅ Updating order in orders array:', { 
+          index: orderIndex, 
+          oldStatus: state.orders[orderIndex].status, 
+          newStatus 
+        });
+        state.orders[orderIndex].status = newStatus;
+        if (estimatedTime !== undefined) {
+          state.orders[orderIndex].estimatedTime = estimatedTime;
+        }
+        state.orders[orderIndex].updatedAt = timestamp || new Date().toISOString();
+        // Ensure we're updating the correct ID field
+        state.orders[orderIndex].id = state.orders[orderIndex].id || actualOrderId;
+      }
+      // Note: Order not in Redux state is normal - RTK Query manages its own cache
+      
+      // Update in live orders array
+      const liveOrderIndex = state.liveOrders.findIndex(order => 
+        order.id === actualOrderId || 
+        order._id === actualOrderId || 
+        order.orderId === actualOrderId ||
+        (orderNumber && order.orderNumber === orderNumber)
+      );
+      
+      if (liveOrderIndex !== -1) {
+        console.log('✅ Updating order in live orders array:', { 
+          index: liveOrderIndex, 
+          oldStatus: state.liveOrders[liveOrderIndex].status, 
+          newStatus 
+        });
+        state.liveOrders[liveOrderIndex].status = newStatus;
+        if (estimatedTime !== undefined) {
+          state.liveOrders[liveOrderIndex].estimatedTime = estimatedTime;
+        }
+        state.liveOrders[liveOrderIndex].updatedAt = timestamp || new Date().toISOString();
+        // Ensure we're updating the correct ID field
+        state.liveOrders[liveOrderIndex].id = state.liveOrders[liveOrderIndex].id || actualOrderId;
+        
+        // Remove from live orders if completed or cancelled
+        if (['completed', 'cancelled'].includes(newStatus)) {
+          console.log('🗑️ Removing order from live orders (completed/cancelled)');
+          state.liveOrders.splice(liveOrderIndex, 1);
+        }
+      }
+      // Note: Order not in Redux state is normal - RTK Query manages its own cache
+      
+      // Update current order if it matches
+      if (state.currentOrder && (
+        state.currentOrder.id === actualOrderId || 
+        state.currentOrder._id === actualOrderId ||
+        (orderNumber && state.currentOrder.orderNumber === orderNumber)
+      )) {
+        console.log('✅ Updating current order:', { 
+          oldStatus: state.currentOrder.status, 
+          newStatus 
+        });
+        state.currentOrder.status = newStatus;
+        if (estimatedTime !== undefined) {
+          state.currentOrder.estimatedTime = estimatedTime;
+        }
+        state.currentOrder.updatedAt = timestamp || new Date().toISOString();
+        // Ensure we're updating the correct ID field
+        state.currentOrder.id = state.currentOrder.id || actualOrderId;
+      }
+      
+      state.lastUpdateTime = new Date().toISOString();
+      console.log('✅ Status update completed for order:', actualOrderId);
+    },
   },
-  extraReducers: (builder) => {
-    builder
-      // Fetch Orders
-      .addCase(fetchOrders.pending, (state) => {
-        state.ordersLoading = true;
-        state.ordersError = null;
-      })
-      .addCase(fetchOrders.fulfilled, (state, action) => {
-        state.ordersLoading = false;
-        state.orders = action.payload.orders;
-        state.currentRole = action.payload.role;
-        state.currentEntityId = action.payload.entityId;
-        state.filters = { ...state.filters, ...action.payload.filters };
-        state.pagination.total = action.payload.orders.length;
-        state.lastUpdateTime = new Date().toISOString();
-      })
-      .addCase(fetchOrders.rejected, (state, action) => {
-        state.ordersLoading = false;
-        state.ordersError = action.payload;
-      })
-      
-      // Fetch Live Orders
-      .addCase(fetchLiveOrders.pending, (state) => {
-        state.liveOrdersLoading = true;
-        state.liveOrdersError = null;
-      })
-      .addCase(fetchLiveOrders.fulfilled, (state, action) => {
-        state.liveOrdersLoading = false;
-        state.liveOrders = action.payload.liveOrders;
-        state.lastUpdateTime = new Date().toISOString();
-      })
-      .addCase(fetchLiveOrders.rejected, (state, action) => {
-        state.liveOrdersLoading = false;
-        state.liveOrdersError = action.payload;
-      })
-      
-      // Create Order
-      .addCase(createOrder.pending, (state) => {
-        state.currentOrderLoading = true;
-        state.currentOrderError = null;
-      })
-      .addCase(createOrder.fulfilled, (state, action) => {
-        state.currentOrderLoading = false;
-        
-        // For restaurant orders, set as current order
-        if (action.payload.order) {
-          state.currentOrder = action.payload.order;
-          state.orders.unshift(action.payload.order);
-          state.liveOrders.unshift(action.payload.order);
-        }
-        
-        // For zone orders, add all vendor orders
-        if (action.payload.vendorOrders) {
-          action.payload.vendorOrders.forEach(vendorOrder => {
-            state.orders.unshift(vendorOrder);
-            state.liveOrders.unshift(vendorOrder);
-          });
-          state.currentOrder = action.payload.zoneOrder;
-        }
-        
-        state.lastUpdateTime = new Date().toISOString();
-      })
-      .addCase(createOrder.rejected, (state, action) => {
-        state.currentOrderLoading = false;
-        state.currentOrderError = action.payload;
-      })
-      
-      // Update Order Status
-      .addCase(updateOrderStatus.fulfilled, (state, action) => {
-        const updatedOrder = action.payload;
-        
-        // Update in orders array
-        const orderIndex = state.orders.findIndex(order => order.id === updatedOrder.id);
-        if (orderIndex !== -1) {
-          state.orders[orderIndex] = updatedOrder;
-        }
-        
-        // Update in live orders array
-        const liveOrderIndex = state.liveOrders.findIndex(order => order.id === updatedOrder.id);
-        if (liveOrderIndex !== -1) {
-          if (['completed', 'cancelled'].includes(updatedOrder.status)) {
-            // Remove from live orders if completed/cancelled
-            state.liveOrders.splice(liveOrderIndex, 1);
-          } else {
-            state.liveOrders[liveOrderIndex] = updatedOrder;
-          }
-        }
-        
-        // Update current order if it matches
-        if (state.currentOrder && state.currentOrder.id === updatedOrder.id) {
-          state.currentOrder = updatedOrder;
-        }
-        
-        state.lastUpdateTime = new Date().toISOString();
-      })
-      
-      // Fetch Order Details
-      .addCase(fetchOrderDetails.pending, (state) => {
-        state.currentOrderLoading = true;
-        state.currentOrderError = null;
-      })
-      .addCase(fetchOrderDetails.fulfilled, (state, action) => {
-        state.currentOrderLoading = false;
-        state.currentOrder = action.payload;
-      })
-      .addCase(fetchOrderDetails.rejected, (state, action) => {
-        state.currentOrderLoading = false;
-        state.currentOrderError = action.payload;
-      })
-      
-      // Cancel Order
-      .addCase(cancelOrder.fulfilled, (state, action) => {
-        const cancelledOrder = action.payload;
-        
-        // Update in orders array
-        const orderIndex = state.orders.findIndex(order => order.id === cancelledOrder.id);
-        if (orderIndex !== -1) {
-          state.orders[orderIndex] = cancelledOrder;
-        }
-        
-        // Remove from live orders
-        state.liveOrders = state.liveOrders.filter(order => order.id !== cancelledOrder.id);
-        
-        // Update current order if it matches
-        if (state.currentOrder && state.currentOrder.id === cancelledOrder.id) {
-          state.currentOrder = cancelledOrder;
-        }
-        
-        state.lastUpdateTime = new Date().toISOString();
-      });
-  },
+// Note: The extraReducers for the old thunks have been removed.
+// Data fetching is now handled by RTK Query hooks in components.
+// This slice focuses on UI state management and real-time event handling.
 });
 
 // ===== ACTIONS =====
@@ -510,6 +346,9 @@ export const {
   toggleAutoRefresh,
   clearOrdersData,
   restoreOrderState,
+  orderCreated,
+  orderUpdated,
+  statusChanged,
 } = ordersSlice.actions;
 
 // ===== SELECTORS =====
@@ -580,3 +419,25 @@ export const selectRecentOrders = createSelector(
 );
 
 export default ordersSlice.reducer;
+
+// ===== MIGRATION GUIDE =====
+// This slice has been migrated from localStorage-based operations to RTK Query.
+// 
+// OLD PATTERN (Deprecated):
+// ```
+// import { fetchOrders, createOrder } from '../slices/ordersSlice';
+// const dispatch = useDispatch();
+// dispatch(fetchOrders({ role: 'restaurant_owner', entityId: restaurantId }));
+// ```
+//
+// NEW PATTERN (Recommended):
+// ```
+// import { useGetOrdersQuery, useCreateOrderMutation } from '../api/ordersApi';
+// const { data: orders, isLoading } = useGetOrdersQuery({ role: 'restaurant_owner', entityId: restaurantId });
+// const [createOrder] = useCreateOrderMutation();
+// ```
+//
+// Real-time events are still handled by this slice:
+// - orderCreated, orderUpdated, statusChanged (from WebSocket)
+// - UI state management (filters, pagination, current order)
+// - Optimistic updates (updateOrderStatusLocal)

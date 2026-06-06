@@ -328,9 +328,9 @@ class AnalyticsService {
   }
 
   // Get filtered data for Super Admin using real data from LocalStorageService
-  getFilteredAnalytics(entityFilter, timeRange = '7d') {
+  async getFilteredAnalytics(entityFilter, timeRange = '7d') {
     if (entityFilter === 'restaurants') {
-      const restaurants = LocalStorageService.getRestaurants();
+      const restaurants = await LocalStorageService.getRestaurants();
       return {
         entities: restaurants.map(restaurant => ({
           id: restaurant.id,
@@ -340,7 +340,7 @@ class AnalyticsService {
           totalOrders: restaurant.orders || 0,
           status: restaurant.status,
           subscriptionPlan: restaurant.subscriptionPlan,
-          revenueChange: Math.random() * 20 - 10 // Mock growth for now
+          revenueChange: null
         })),
         totalRevenue: restaurants.reduce((sum, r) => sum + (r.revenue || 0), 0),
         totalOrders: restaurants.reduce((sum, r) => sum + (r.orders || 0), 0)
@@ -357,7 +357,7 @@ class AnalyticsService {
           status: zone.status,
           subscriptionPlan: zone.subscriptionPlan,
           totalShops: zone.shops?.length || 0,
-          revenueChange: Math.random() * 15 - 7.5 // Mock growth for now
+          revenueChange: null
         })),
         totalRevenue: zones.reduce((sum, z) => sum + (z.totalRevenue || 0), 0),
         totalOrders: zones.reduce((sum, z) => sum + (z.totalOrders || 0), 0)

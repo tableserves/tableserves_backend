@@ -9,29 +9,24 @@ const orderSchema = new Schema({
   // Order Identification
   orderNumber: {
     type: String,
-    required: [true, 'Order number is required'],
     unique: true,
-    uppercase: true,
-    match: [/^[A-Z0-9]{8,12}$/, 'Order number must be 8-12 alphanumeric characters']
+    uppercase: true
   },
   
   // Location References (only one should be set)
   restaurantId: {
     type: Schema.Types.ObjectId,
-    ref: 'Restaurant',
-    index: true
+    ref: 'Restaurant'
   },
   
   zoneId: {
     type: Schema.Types.ObjectId,
-    ref: 'Zone',
-    index: true
+    ref: 'Zone'
   },
   
   shopId: {
     type: Schema.Types.ObjectId,
-    ref: 'Shop',
-    index: true
+    ref: 'ZoneShop'
   },
   
   // Table Information
@@ -53,8 +48,7 @@ const orderSchema = new Schema({
     phone: {
       type: String,
       required: [true, 'Customer phone is required'],
-      trim: true,
-      match: [/^[\\+]?[1-9][\\d]{0,15}$/, 'Please provide a valid phone number']
+      trim: true
     },
     
     email: {
@@ -114,14 +108,12 @@ const orderSchema = new Schema({
     modifiers: [{
       name: {
         type: String,
-        required: [true, 'Modifier name is required'],
         trim: true
       },
       
       options: [{
         name: {
           type: String,
-          required: [true, 'Option name is required'],
           trim: true
         },
         price: {
@@ -255,8 +247,8 @@ const orderSchema = new Schema({
     
     currency: {
       type: String,
-      enum: ['USD', 'EUR', 'GBP', 'CAD', 'AUD'],
-      default: 'USD'
+      enum: ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'PKR', 'RS'],
+      default: 'PKR'
     }
   },
   
@@ -271,7 +263,7 @@ const orderSchema = new Schema({
     default: 'pending',
     index: true
   },
-  
+
   // Payment Information
   payment: {
     status: {
@@ -282,37 +274,73 @@ const orderSchema = new Schema({
       },
       default: 'pending'
     },
-    
+
     method: {
       type: String,
-      enum: ['cash', 'credit_card', 'debit_card', 'paypal', 'apple_pay', 'google_pay'],
+      enum: ['cash', 'credit_card', 'debit_card', 'paypal', 'apple_pay', 'google_pay', 'razorpay', 'upi', 'netbanking'],
       description: 'Payment method used'
     },
-    
+
     transactionId: {
       type: String,
       description: 'Payment processor transaction ID'
     },
-    
+
+    // Razorpay-specific fields
+    razorpayOrderId: {
+      type: String,
+      description: 'Razorpay order ID for payment tracking'
+    },
+
+    razorpayPaymentId: {
+      type: String,
+      description: 'Razorpay payment ID after successful payment'
+    },
+
+    razorpaySignature: {
+      type: String,
+      description: 'Razorpay signature for payment verification'
+    },
+
+    signatureVerified: {
+      type: Boolean,
+      default: false,
+      description: 'Whether Razorpay signature has been verified'
+    },
+
     paidAt: {
       type: Date,
       description: 'When payment was completed'
     },
-    
+
     refundedAt: {
       type: Date,
       description: 'When refund was processed'
     },
-    
+
     refundAmount: {
       type: Number,
       min: [0, 'Refund amount cannot be negative'],
       description: 'Amount refunded'
     },
-    
+
     failureReason: {
       type: String,
       description: 'Reason for payment failure'
+    },
+
+    // Payment verification attempts
+    verificationAttempts: {
+      type: Number,
+      default: 0,
+      min: [0, 'Verification attempts cannot be negative'],
+      description: 'Number of payment verification attempts'
+    },
+
+    // Payment expiry for Razorpay orders
+    expiresAt: {
+      type: Date,
+      description: 'When the payment order expires'
     }
   },
   
@@ -437,6 +465,24 @@ const orderSchema = new Schema({
       max: [5, 'Rating must be between 1 and 5']
     },
     
+    foodRating: {
+      type: Number,
+      min: [1, 'Rating must be between 1 and 5'],
+      max: [5, 'Rating must be between 1 and 5']
+    },
+    
+    venueRating: {
+      type: Number,
+      min: [1, 'Rating must be between 1 and 5'],
+      max: [5, 'Rating must be between 1 and 5']
+    },
+    
+    platformRating: {
+      type: Number,
+      min: [1, 'Rating must be between 1 and 5'],
+      max: [5, 'Rating must be between 1 and 5']
+    },
+    
     comment: {
       type: String,
       maxlength: [1000, 'Feedback comment cannot exceed 1000 characters']
@@ -498,11 +544,16 @@ const orderSchema = new Schema({
 }, {
   timestamps: true,
   toJSON: { virtuals: true },
-  toObject: { virtuals: true }
+  toObject: { virtuals: true },
+  // Optimistic concurrency: save() will reject if __v changed since fetch.
+  // Two concurrent zone-main syncs that race will produce a VersionError on
+  // the loser, which is preferable to silent last-write-wins (duplicate
+  // status-history entries, wrong previousStatus, etc). Callers should
+  // catch VersionError and retry.
+  optimisticConcurrency: true
 });
 
 // Indexes for performance
-orderSchema.index({ orderNumber: 1 }, { unique: true });
 orderSchema.index({ restaurantId: 1, createdAt: -1 });
 orderSchema.index({ zoneId: 1, createdAt: -1 });
 orderSchema.index({ shopId: 1, createdAt: -1 });
@@ -510,6 +561,8 @@ orderSchema.index({ status: 1, createdAt: -1 });
 orderSchema.index({ 'customer.phone': 1 });
 orderSchema.index({ 'customer.email': 1 });
 orderSchema.index({ 'payment.status': 1 });
+orderSchema.index({ 'payment.razorpayOrderId': 1 });
+orderSchema.index({ 'payment.razorpayPaymentId': 1 });
 orderSchema.index({ tableNumber: 1, restaurantId: 1 });
 orderSchema.index({ createdAt: -1 });
 
@@ -519,32 +572,37 @@ orderSchema.index({ zoneId: 1, status: 1, createdAt: -1 });
 
 // Virtual for total items count
 orderSchema.virtual('totalItems').get(function() {
-  return this.items.reduce((total, item) => total + item.quantity, 0);
+  if (!this.items || !Array.isArray(this.items)) return 0;
+  return this.items.reduce((total, item) => total + (item.quantity || 0), 0);
 });
 
 // Virtual for order duration
 orderSchema.virtual('duration').get(function() {
-  if (!this.timing.orderCompleted) return null;
+  if (!this.timing || !this.timing.orderCompleted) return null;
   
   const start = this.timing.orderPlaced;
   const end = this.timing.orderCompleted;
+  if (!start || !end) return null;
   return Math.round((end - start) / (1000 * 60)); // minutes
 });
 
 // Virtual for preparation time
 orderSchema.virtual('prepTime').get(function() {
-  if (!this.timing.preparationStarted || !this.timing.orderReady) return null;
+  if (!this.timing || !this.timing.preparationStarted || !this.timing.orderReady) return null;
   
   const start = this.timing.preparationStarted;
   const end = this.timing.orderReady;
+  if (!start || !end) return null;
   return Math.round((end - start) / (1000 * 60)); // minutes
 });
 
 // Virtual for estimated completion time
 orderSchema.virtual('estimatedCompletion').get(function() {
-  if (!this.delivery.estimatedTime) return null;
+  if (!this.delivery || !this.delivery.estimatedTime) return null;
+  if (!this.timing) return null;
   
   const startTime = this.timing.orderConfirmed || this.timing.orderPlaced;
+  if (!startTime) return null;
   return new Date(startTime.getTime() + (this.delivery.estimatedTime * 60 * 1000));
 });
 
@@ -553,8 +611,11 @@ orderSchema.virtual('estimatedCompletion').get(function() {
 /**
  * Update order status
  */
-orderSchema.methods.updateStatus = function(newStatus, updatedBy = null, notes = '') {
+orderSchema.methods.updateStatus = function(newStatus, updatedBy = null, notes = '', session = null) {
   const oldStatus = this.status;
+  
+  // ALWAYS set previousStatus before changing status
+  this.previousStatus = this.status;
   this.status = newStatus;
   
   // Add to status history
@@ -570,9 +631,10 @@ orderSchema.methods.updateStatus = function(newStatus, updatedBy = null, notes =
   switch (newStatus) {
     case 'confirmed':
       this.timing.orderConfirmed = now;
-      break;
-    case 'preparing':
-      this.timing.preparationStarted = now;
+      // Since confirmed includes preparing, also set preparation started
+      if (!this.timing.preparationStarted) {
+        this.timing.preparationStarted = now;
+      }
       break;
     case 'ready':
       this.timing.orderReady = now;
@@ -585,13 +647,15 @@ orderSchema.methods.updateStatus = function(newStatus, updatedBy = null, notes =
       break;
   }
   
-  return this.save();
+  // Return the document without saving - let the caller handle saving with proper session
+  return this;
 };
 
 /**
  * Add item to order
  */
 orderSchema.methods.addItem = function(itemData) {
+  if (!this.items) this.items = [];
   this.items.push(itemData);
   this.recalculateTotal();
   return this.save();
@@ -601,6 +665,9 @@ orderSchema.methods.addItem = function(itemData) {
  * Remove item from order
  */
 orderSchema.methods.removeItem = function(itemId) {
+  if (!this.items || !Array.isArray(this.items)) {
+    throw new Error('No items in order');
+  }
   this.items.id(itemId).remove();
   this.recalculateTotal();
   return this.save();
@@ -610,11 +677,18 @@ orderSchema.methods.removeItem = function(itemId) {
  * Update item quantity
  */
 orderSchema.methods.updateItemQuantity = function(itemId, newQuantity) {
+  if (!this.items || !Array.isArray(this.items)) {
+    throw new Error('No items in order');
+  }
   const item = this.items.id(itemId);
   if (!item) throw new Error('Item not found');
   
   item.quantity = newQuantity;
-  item.subtotal = (item.price + item.modifiers.reduce((sum, mod) => sum + mod.totalPrice, 0)) * newQuantity;
+  // Safely handle modifiers - ensure it's an array before using reduce
+  const modifiersTotal = (item.modifiers && Array.isArray(item.modifiers)) 
+    ? item.modifiers.reduce((sum, mod) => sum + (mod.totalPrice || 0), 0) 
+    : 0;
+  item.subtotal = (item.price + modifiersTotal) * newQuantity;
   
   this.recalculateTotal();
   return this.save();
@@ -625,27 +699,31 @@ orderSchema.methods.updateItemQuantity = function(itemId, newQuantity) {
  */
 orderSchema.methods.recalculateTotal = function() {
   // Calculate subtotal from items
-  this.pricing.subtotal = this.items.reduce((total, item) => total + item.subtotal, 0);
+  if (!this.items || !Array.isArray(this.items)) {
+    this.pricing.subtotal = 0;
+  } else {
+    this.pricing.subtotal = this.items.reduce((total, item) => total + (item.subtotal || 0), 0);
+  }
   
   // Calculate tax
-  this.pricing.tax.amount = this.pricing.subtotal * this.pricing.tax.rate;
+  this.pricing.tax.amount = this.pricing.subtotal * (this.pricing.tax.rate || 0);
   
   // Calculate service fee
-  this.pricing.serviceFee.amount = this.pricing.subtotal * this.pricing.serviceFee.rate;
+  this.pricing.serviceFee.amount = this.pricing.subtotal * (this.pricing.serviceFee.rate || 0);
   
   // Calculate discount
   if (this.pricing.discount.type === 'percentage') {
-    this.pricing.discount.amount = this.pricing.subtotal * (this.pricing.discount.value / 100);
+    this.pricing.discount.amount = this.pricing.subtotal * ((this.pricing.discount.value || 0) / 100);
   } else {
-    this.pricing.discount.amount = Math.min(this.pricing.discount.value, this.pricing.subtotal);
+    this.pricing.discount.amount = Math.min(this.pricing.discount.value || 0, this.pricing.subtotal);
   }
   
   // Calculate total
   this.pricing.total = this.pricing.subtotal 
-    + this.pricing.tax.amount 
-    + this.pricing.serviceFee.amount 
-    - this.pricing.discount.amount 
-    + this.pricing.tip.amount;
+    + (this.pricing.tax.amount || 0)
+    + (this.pricing.serviceFee.amount || 0)
+    - (this.pricing.discount.amount || 0)
+    + (this.pricing.tip.amount || 0);
   
   return this;
 };
@@ -658,72 +736,123 @@ orderSchema.methods.markAsPaid = function(paymentMethod, transactionId = null) {
   this.payment.method = paymentMethod;
   this.payment.transactionId = transactionId;
   this.payment.paidAt = new Date();
-  
+
   return this.save();
+};
+
+/**
+ * Mark order as paid with Razorpay details
+ */
+orderSchema.methods.markAsPaidWithRazorpay = function(razorpayPaymentId, razorpaySignature, paymentMethod = 'razorpay') {
+  this.payment.status = 'paid';
+  this.payment.method = paymentMethod;
+  this.payment.razorpayPaymentId = razorpayPaymentId;
+  this.payment.razorpaySignature = razorpaySignature;
+  this.payment.signatureVerified = true;
+  this.payment.paidAt = new Date();
+
+  return this.save();
+};
+
+/**
+ * Mark payment as failed
+ */
+orderSchema.methods.markPaymentFailed = function(reason = 'Payment failed') {
+  this.payment.status = 'failed';
+  this.payment.failureReason = reason;
+  this.payment.verificationAttempts += 1;
+
+  return this.save();
+};
+
+/**
+ * Set Razorpay order details
+ */
+orderSchema.methods.setRazorpayOrder = function(razorpayOrderId, expiresAt = null) {
+  this.payment.razorpayOrderId = razorpayOrderId;
+  this.payment.status = 'processing';
+  if (expiresAt) {
+    this.payment.expiresAt = expiresAt;
+  }
+
+  return this.save();
+};
+
+/**
+ * Check if payment has expired
+ */
+orderSchema.methods.isPaymentExpired = function() {
+  if (!this.payment.expiresAt) return false;
+  return new Date() > this.payment.expiresAt;
 };
 
 /**
  * Add feedback
  */
-orderSchema.methods.addFeedback = function(rating, comment = '', isPublic = false) {
-  this.feedback = {
-    rating,
-    comment,
-    submittedAt: new Date(),
-    isPublic
-  };
+orderSchema.methods.addFeedback = function(ratingData, comment = '', isPublic = false) {
+  // Backwards compatibility for single rating
+  if (typeof ratingData === 'number') {
+    this.feedback = {
+      rating: ratingData,
+      comment,
+      submittedAt: new Date(),
+      isPublic
+    };
+  } else {
+    // New multi-rating structure
+    this.feedback = {
+      rating: ratingData.rating || Math.round(((ratingData.foodRating || 0) + (ratingData.venueRating || 0) + (ratingData.platformRating || 0)) / 3) || 5,
+      foodRating: ratingData.foodRating,
+      venueRating: ratingData.venueRating,
+      platformRating: ratingData.platformRating,
+      comment: ratingData.comment || comment,
+      submittedAt: new Date(),
+      isPublic
+    };
+  }
   
   return this.save();
 };
 
-// Static Methods
-
 /**
- * Generate unique order number
+ * Generate order number
+ * Format: ORD+DD+XXX
  */
 orderSchema.statics.generateOrderNumber = async function() {
-  const timestamp = Date.now().toString().slice(-6);
-  const random = Math.random().toString(36).substr(2, 4).toUpperCase();
-  let orderNumber = `ORD${timestamp}${random}`;
-  
-  // Ensure uniqueness
-  while (await this.findOne({ orderNumber })) {
-    const newRandom = Math.random().toString(36).substr(2, 4).toUpperCase();
-    orderNumber = `ORD${timestamp}${newRandom}`;
-  }
-  
+  const prefix = 'ORD';
+  const dayCode = new Date().getDate().toString().padStart(2, '0');
+  let uniqueCode, orderNumber;
+
+  do {
+    uniqueCode = Math.random().toString(36).substr(2, 3).toUpperCase();
+    orderNumber = `${prefix}${dayCode}${uniqueCode}`;
+  } while (await this.findOne({ orderNumber }));
+
   return orderNumber;
 };
 
 /**
- * Find orders by status
+ * Order statistics aggregation
  */
-orderSchema.statics.findByStatus = function(status, locationId = null, locationType = 'restaurant') {
-  const query = { status };
-  
-  if (locationId) {
-    query[`${locationType}Id`] = locationId;
-  }
-  
-  return this.find(query).sort({ createdAt: -1 });
-};
-
-/**
- * Get order statistics
- */
-orderSchema.statics.getStatistics = function(locationId = null, locationType = 'restaurant', dateRange = {}) {
+orderSchema.statics.getEnhancedStatistics = function(locationId = null, locationType = 'restaurant', dateRange = {}) {
   const matchStage = {};
-  
+
   if (locationId) {
-    matchStage[`${locationType}Id`] = locationId;
+    if (locationType === 'zone') {
+      matchStage.zoneId = locationId;
+    } else if (locationType === 'shop') {
+      matchStage.shopId = locationId;
+    } else {
+      matchStage[`${locationType}Id`] = locationId;
+    }
   }
-  
+
   if (dateRange.from || dateRange.to) {
     matchStage.createdAt = {};
     if (dateRange.from) matchStage.createdAt.$gte = new Date(dateRange.from);
     if (dateRange.to) matchStage.createdAt.$lte = new Date(dateRange.to);
   }
-  
+
   return this.aggregate([
     { $match: matchStage },
     {
@@ -732,43 +861,76 @@ orderSchema.statics.getStatistics = function(locationId = null, locationType = '
         totalOrders: { $sum: 1 },
         totalRevenue: { $sum: '$pricing.total' },
         averageOrderValue: { $avg: '$pricing.total' },
-        completedOrders: {
-          $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] }
-        },
-        cancelledOrders: {
-          $sum: { $cond: [{ $eq: ['$status', 'cancelled'] }, 1, 0] }
-        }
+        completedOrders: { $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] } },
+        cancelledOrders: { $sum: { $cond: [{ $eq: ['$status', 'cancelled'] }, 1, 0] } }
       }
     }
   ]);
 };
 
+// Snapshot the persisted payment status on document load so the pre-save
+// hook can detect and validate the transition. Without this we'd have to
+// re-fetch from the DB in pre('save') which adds a round-trip on every save.
+orderSchema.post('init', function() {
+  this._originalPaymentStatus = this.payment?.status;
+});
+
+// Whitelist of allowed payment status transitions. Anything not listed here
+// is rejected to prevent data corruption (e.g., paid → failed, refunded → paid).
+const ALLOWED_PAYMENT_TRANSITIONS = {
+  pending:    ['pending', 'processing', 'paid', 'failed', 'cancelled'],
+  processing: ['processing', 'paid', 'failed', 'cancelled'],
+  paid:       ['paid', 'refunded'],
+  failed:     ['failed', 'processing', 'cancelled'],
+  refunded:   ['refunded'],
+  cancelled:  ['cancelled']
+};
+
 // Pre-save middleware
 orderSchema.pre('save', async function(next) {
+  // Validate payment status transitions on existing documents.
+  if (!this.isNew && this.isModified('payment.status') && this._originalPaymentStatus) {
+    const oldStatus = this._originalPaymentStatus;
+    const newStatus = this.payment.status;
+    const allowed = ALLOWED_PAYMENT_TRANSITIONS[oldStatus] || [];
+    if (!allowed.includes(newStatus)) {
+      return next(new Error(
+        `Invalid payment status transition: ${oldStatus} → ${newStatus}`
+      ));
+    }
+  }
+
   // Generate order number if new
   if (this.isNew && !this.orderNumber) {
     this.orderNumber = await this.constructor.generateOrderNumber();
   }
-  
+
   // Add initial status to history if new
   if (this.isNew) {
     this.statusHistory.push({
       status: this.status,
-      automaticUpdate: true
+      automaticUpdate: true,
+      notes: 'Order created'
     });
   }
-  
+
   // Recalculate total if items changed
   if (this.isModified('items') || this.isModified('pricing')) {
     this.recalculateTotal();
   }
-  
+
   // Set flags based on customer preferences
   if (this.customer.preferences.allergies && this.customer.preferences.allergies.length > 0) {
     this.flags.hasAllergies = true;
   }
-  
+
   next();
+});
+
+// Refresh the snapshot after every save so consecutive saves on the same
+// document instance validate transitions against the new persisted state.
+orderSchema.post('save', function() {
+  this._originalPaymentStatus = this.payment?.status;
 });
 
 // Create and export model

@@ -8,13 +8,31 @@ const User = require('./User');
 const Subscription = require('./Subscription');
 const Restaurant = require('./Restaurant');
 const Order = require('./Order');
+const Zone = require('./Zone');
+const ZoneShop = require('./ZoneShop');
+const MenuCategory = require('./MenuCategory');
+const MenuItem = require('./MenuItem');
+const Modifier = require('./Modifier');
+const Variant = require('./Variant');
+const Analytics = require('./Analytics');
+const Report = require('./Report');
+const TableServeRating = require('./TableServeRating');
 
 // Export all models
 module.exports = {
   User,
   Subscription,
   Restaurant,
-  Order
+  Order,
+  Zone,
+  ZoneShop,
+  MenuCategory,
+  MenuItem,
+  Modifier,
+  Variant,
+  Analytics,
+  Report,
+  TableServeRating
 };
 
 // Also export individual models for convenience
@@ -22,22 +40,33 @@ module.exports.User = User;
 module.exports.Subscription = Subscription;
 module.exports.Restaurant = Restaurant;
 module.exports.Order = Order;
+module.exports.Zone = Zone;
+module.exports.ZoneShop = ZoneShop;
+module.exports.MenuCategory = MenuCategory;
+module.exports.MenuItem = MenuItem;
+module.exports.Modifier = Modifier;
+module.exports.Variant = Variant;
+module.exports.Analytics = Analytics;
+module.exports.Report = Report;
 
 /**
  * Model Relationships Overview:
  * 
  * User (1) -> (1) Subscription
  * User (1) -> (0..n) Restaurant (as owner)
+ * User (1) -> (0..n) Zone (as admin)
+ * User (1) -> (0..n) ZoneShop (as owner/vendor)
  * Restaurant (1) -> (0..n) Order
+ * Restaurant (1) -> (0..n) MenuCategory
+ * Zone (1) -> (0..n) ZoneShop
+ * Zone (1) -> (0..n) MenuCategory
+ * ZoneShop (1) -> (0..n) Order
+ * ZoneShop (1) -> (0..n) MenuCategory
+ * MenuCategory (1) -> (0..n) MenuItem
+ * MenuItem (1) -> (0..n) OrderItem (referenced in orders)
  * Order (1) -> (0..n) OrderItem (embedded)
  * 
  * Future models to be added:
- * - Zone: For zone administrators
- * - Shop: For shops within zones
- * - MenuCategory: For organizing menu items
- * - MenuItem: Individual menu items
- * - ZoneOrder: Orders within zones
- * - Analytics: Analytics and reporting data
  * - Notification: System notifications
  * - AuditLog: System audit trails
  */

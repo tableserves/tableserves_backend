@@ -8,7 +8,9 @@
 import dataAccessLayer from './DataAccessLayer';
 import subscriptionService from './SubscriptionService';
 import vendorService from './VendorService';
+import { analyticsAPI } from '../shared/api/api';
 import logger from './LoggingService';
+import restaurantDataService from '../features/owner/services/RestaurantDataService';
 
 class DataService {
   // ===== RESTAURANT BUSINESS LOGIC =====
@@ -68,10 +70,25 @@ class DataService {
    */
   async getRestaurantProfile(restaurantId) {
     try {
+      // Try to fetch from database first
+      const databaseResult = await restaurantDataService.getRestaurantProfile(restaurantId);
+
+      if (databaseResult.success) {
+        logger.info('Restaurant profile retrieved from database', {
+          restaurantId,
+          menuItemCount: databaseResult.profile.menuItemsCount,
+          categoryCount: databaseResult.profile.categoriesCount
+        }, 'DataService');
+        return databaseResult;
+      }
+
+      // Fallback to localStorage if database fails
+      logger.warn('Database fetch failed, falling back to localStorage', { restaurantId }, 'DataService');
+
       // Cache key for restaurant profile
       const cacheKey = `restaurant_profile_${restaurantId}`;
       const cacheTimeout = 60000; // 1 minute cache
-      
+
       // Check cache first
       const cached = dataAccessLayer.getCache(cacheKey);
       if (cached && Date.now() - cached.timestamp < cacheTimeout) {
@@ -84,41 +101,48 @@ class DataService {
         return { success: false, error: 'Restaurant not found' };
       }
 
-      // Get menu items and categories efficiently
+      // Get menu items and categories efficiently - await async calls
       const menuItems = dataAccessLayer.getMenuItems({ restaurantId });
-      const menuCategories = dataAccessLayer.getData(
-        dataAccessLayer.constructor.STORAGE_KEYS?.restaurantMenuCategories?.(restaurantId) || 
-        `restaurant_menu_categories_${restaurantId}`, 
+      const menuCategories = await dataAccessLayer.getData(
+        dataAccessLayer.constructor.STORAGE_KEYS?.restaurantMenuCategories?.(restaurantId) ||
+        `restaurant_menu_categories_${restaurantId}`,
         []
       );
 
-      // Get analytics data
-      const analytics = dataAccessLayer.getData(
-        `restaurant_analytics_${restaurantId}`, 
+      // Get analytics data - await async call
+      const analytics = await dataAccessLayer.getData(
+        `restaurant_analytics_${restaurantId}`,
         { totalOrders: 0, totalRevenue: 0, averageRating: 0 }
       );
+
+      // Ensure all data is serializable (no Promises)
+      const safeMenuItems = Array.isArray(menuItems) ? menuItems : [];
+      const safeMenuCategories = Array.isArray(menuCategories) ? menuCategories : [];
+      const safeAnalytics = analytics && typeof analytics === 'object' && !analytics.then
+        ? analytics
+        : { totalOrders: 0, totalRevenue: 0, averageRating: 0 };
 
       const result = {
         success: true,
         profile: {
           ...restaurant,
-          menuItems,
-          menuCategories,
-          analytics,
-          menuItemCount: menuItems.length,
-          categoryCount: menuCategories.length
+          menuItems: safeMenuItems,
+          menuCategories: safeMenuCategories,
+          analytics: safeAnalytics,
+          menuItemCount: safeMenuItems.length,
+          categoryCount: safeMenuCategories.length
         }
       };
-      
+
       // Cache the result
       dataAccessLayer.setCache(cacheKey, result);
-      
-      logger.debug('Restaurant profile fetched and cached', { 
-        restaurantId, 
-        menuItemCount: menuItems.length,
-        categoryCount: menuCategories.length 
+
+      logger.debug('Restaurant profile fetched from localStorage and cached', {
+        restaurantId,
+        menuItemCount: safeMenuItems.length,
+        categoryCount: safeMenuCategories.length
       }, 'DataService');
-      
+
       return result;
     } catch (error) {
       logger.error('Failed to get restaurant profile', error, 'DataService');
@@ -178,13 +202,19 @@ class DataService {
       }
 
       // Get vendors using the unified method
-      const vendors = dataAccessLayer.getVendors(zoneId);
+      const vendorsResult = await dataAccessLayer.getVendors(zoneId);
+      const vendors = Array.isArray(vendorsResult) ? vendorsResult : [];
       
-      // Get zone analytics
-      const analytics = dataAccessLayer.getData(
-        `zone_analytics_${zoneId}`, 
+      // Get zone analytics - ensure it's awaited and serializable
+      const analytics = await dataAccessLayer.getData(
+        `zone_analytics_${zoneId}`,
         { totalOrders: 0, totalRevenue: 0, activeVendors: 0 }
       );
+
+      // Ensure analytics is serializable (not a Promise)
+      const safeAnalytics = analytics && typeof analytics === 'object' && !analytics.then
+        ? analytics
+        : { totalOrders: 0, totalRevenue: 0, activeVendors: 0 };
 
       // Get subscription limits
       const subscriptionLimits = subscriptionService.checkVendorLimit(zoneId, vendors.length);
@@ -194,9 +224,9 @@ class DataService {
         profile: {
           ...zone,
           vendors,
-          analytics,
+          analytics: safeAnalytics,
           vendorCount: vendors.length,
-          activeVendors: vendors.filter(v => v.status === 'active').length,
+          activeVendors: vendors.filter(v => v && v.status === 'active').length,
           subscriptionLimits
         }
       };
@@ -507,8 +537,8 @@ class DataService {
 
   // ===== UTILITY METHODS =====
 
-  findDuplicateRestaurant(restaurantData) {
-    const restaurants = dataAccessLayer.getRestaurants();
+  async findDuplicateRestaurant(restaurantData) {
+    const restaurants = await dataAccessLayer.getRestaurants();
     return restaurants.find(r => 
       r.email === restaurantData.email || 
       r.phone === restaurantData.phone
@@ -542,29 +572,7 @@ class DataService {
    * @returns {Object} System statistics
    */
   getSystemStats() {
-    try {
-      const restaurants = dataAccessLayer.getRestaurants();
-      const zones = dataAccessLayer.getZones();
-      const customers = dataAccessLayer.getData('tableserve_customers', []);
-      
-      // Calculate total vendors across all zones
-      let totalVendors = 0;
-      zones.forEach(zone => {
-        const vendors = dataAccessLayer.getVendors(zone.id);
-        totalVendors += vendors.length;
-      });
-      
-      return {
-        totalRestaurants: restaurants.length,
-        totalZones: zones.length,
-        totalVendors,
-        totalCustomers: customers.length,
-        storageStats: dataAccessLayer.getStorageStats()
-      };
-    } catch (error) {
-      logger.error('Failed to get system stats', error, 'DataService');
-      return null;
-    }
+    return analyticsAPI.getPlatformAnalytics();
   }
 }
 
