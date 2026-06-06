@@ -69,7 +69,7 @@ const LandingScreen = () => {
       if (fetchingZoneFromBackend) return 'Loading...';
       return `Food Zone ${zoneId.slice(-6).toUpperCase()}`;
     }
-    return 'TableServe';
+    return 'Tableserves';
   }, [currentRestaurant, currentZone, restaurantId, zoneId, fetchingFromBackend, fetchingZoneFromBackend]);
 
   // Get logo image from media.images array
@@ -308,8 +308,8 @@ const LandingScreen = () => {
         <motion.div variants={itemVariants} className="mt-8 pt-6 border-t border-slate-100 flex items-center justify-center gap-2">
           <span className="text-[10px] font-medium text-slate-400 uppercase tracking-widest">Powered by</span>
           <div className="flex items-center gap-1.5 opacity-80 grayscale transition-all duration-300 hover:grayscale-0 hover:opacity-100 cursor-default">
-            <img src={logo} alt="TableServe" className="w-3.5 h-3.5" />
-            <span className="text-[11px] font-bold text-slate-700 tracking-tight">TableServe</span>
+            <img src={logo} alt="Tableserves" className="w-3.5 h-3.5" />
+            <span className="text-[11px] font-bold text-slate-700 tracking-tight">Tableserves</span>
           </div>
         </motion.div>
 

@@ -151,20 +151,20 @@ class NotificationService {
 
       // Enhanced mail options for production
       const mailOptions = {
-        from: process.env.EMAIL_FROM || process.env.SMTP_USER || 'tableserve@example.com',
+        from: process.env.EMAIL_FROM || process.env.SMTP_USER || 'tableserves@example.com',
         to: email,
         subject: emailContent.subject,
         html: emailContent.html,
         text: emailContent.text,
         // Production email headers
         headers: {
-          'X-Mailer': 'TableServe',
+          'X-Mailer': 'Tableserves',
           'X-Priority': '1',
           'X-MSMail-Priority': 'High',
           'Importance': 'high'
         },
         // Email tracking (optional)
-        messageId: `tableserve-${Date.now()}-${Math.random().toString(36).substring(2, 11)}@tableserve.com`
+        messageId: `tableserves-${Date.now()}-${Math.random().toString(36).substring(2, 11)}@tableserves.com`
       };
 
       const result = await emailOTPService.transporter.sendMail(mailOptions);
@@ -217,7 +217,7 @@ class NotificationService {
    */
   generateEmailContent(notificationData) {
     const template = this.notificationTemplates[notificationData.type] || {
-      title: notificationData.title || 'TableServe Notification',
+      title: notificationData.title || 'Tableserves Notification',
       message: notificationData.message || 'You have received a new notification.',
       icon: 'bell',
       priority: 'medium'
@@ -249,7 +249,7 @@ class NotificationService {
       <body>
         <div class="container">
           <div class="header">
-            <h1>🍽️ TableServe</h1>
+            <h1>🍽️ Tableserves</h1>
             <h2>${template.title}</h2>
           </div>
           <div class="content">
@@ -262,7 +262,7 @@ class NotificationService {
             <p>If you have any questions or need assistance, please contact our support team.</p>
             
             <div class="footer">
-              <p>© 2024 TableServe. All rights reserved.</p>
+              <p>© 2024 Tableserves. All rights reserved.</p>
               <p>This is an automated email, please do not reply.</p>
             </div>
           </div>
@@ -276,7 +276,7 @@ class NotificationService {
       
       ${notificationData.message || template.message}
       
-      © 2024 TableServe. All rights reserved.
+      © 2024 Tableserves. All rights reserved.
     `;
 
     return {
@@ -470,7 +470,7 @@ class NotificationService {
         <div class="email-wrapper">
           <div class="header">
             <div class="logo">🍽️</div>
-            <h1>TableServe</h1>
+            <h1>Tableserves</h1>
             <p>Password Reset Request</p>
           </div>
           
@@ -506,7 +506,7 @@ class NotificationService {
           </div>
           
           <div class="footer">
-            <p><strong>© 2024 TableServe. All rights reserved.</strong></p>
+            <p><strong>© 2024 Tableserves. All rights reserved.</strong></p>
             <p>This is an automated email, please do not reply.</p>
             <div class="footer-links">
               <a href="#">Help Center</a> • 
@@ -520,7 +520,7 @@ class NotificationService {
     `;
 
     const text = `
-TableServe - Password Reset Request
+Tableserves - Password Reset Request
 
 Hello,
 
@@ -536,7 +536,7 @@ ${resetLink}
 
 If you have any questions or need assistance, please contact our support team.
 
-© 2024 TableServe. All rights reserved.
+© 2024 Tableserves. All rights reserved.
 This is an automated email, please do not reply.
     `;
 

@@ -22,7 +22,7 @@ const Footer = () => (
           <div className="md:col-span-2">
             <div className="flex items-center mb-4">
               <img src={logo} alt="Logo" className="w-14 h-14" />
-              <h3 className="text-2xl font-cinzel text-accent font-semibold">TableServes</h3>
+              <h3 className="text-2xl font-cinzel text-accent font-semibold">Tableserves</h3>
             </div>
             <p className="font-raleway text-gray-300 mb-6 max-w-md leading-relaxed">
               Revolutionizing the dining experience with innovative QR-powered ordering solutions. Seamless, intuitive, and powerful technology for restaurants and food zones across India.
@@ -69,7 +69,7 @@ const Footer = () => (
 
         {/* Bottom Bar */}
         <div className="border-t border-gray-700 pt-8">
-          <p className="font-raleway text-sm text-gray-400 mb-2 text-center">&copy; 2025 TableServes. All rights reserved.</p>
+          <p className="font-raleway text-sm text-gray-400 mb-2 text-center">&copy; 2025 Tableserves. All rights reserved.</p>
           <span className="text-xs text-gray-500 block text-center">Made with ❤️ in India</span>
         </div>
       </div>

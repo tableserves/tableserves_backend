@@ -23,7 +23,7 @@ const Hero = () => {
             Transforming Dine-In Experiences with Self-Service Technology
           </h1>
           <p className="text-base sm:text-lg md:text-xl mb-8 max-w-xl mx-auto md:mx-0 text-orange-300 font-raleway leading-relaxed">
-            At Tableserve, we’re redefining dining by empowering restaurants with smart, seamless self-service solutions that delight guests and simplify operations.
+            At Tableserves, we’re redefining dining by empowering restaurants with smart, seamless self-service solutions that delight guests and simplify operations.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center md:justify-start" data-aos="zoom-in-up" data-aos-delay="300">
             <Link

@@ -36,8 +36,14 @@ const logger = (() => {
 
 // CORS configuration
 const allowedOrigins = process.env.NODE_ENV === 'production'
-  ? [process.env.FRONTEND_URL, process.env.ADMIN_PANEL_URL, 'https://tableserves.com'].filter(Boolean)
-  : ['http://localhost:5173', 'http://localhost:3000', 'http://127.0.0.1:5173', 'http://localhost:8080', 'https://tableserves.com'];
+  ? [
+      process.env.FRONTEND_URL,
+      process.env.ADMIN_PANEL_URL,
+      'https://tableserves.com',
+      'https://www.tableserves.com',
+      'https://api.tableserves.com'
+    ].filter(Boolean)
+  : ['http://localhost:5173', 'http://localhost:3000', 'http://127.0.0.1:5173', 'http://localhost:8080', 'https://tableserves.com', 'https://www.tableserves.com'];
 
 // Match any LAN IP (192.168.x.x or 10.x.x.x) on any port — covers mobile devices on the same WiFi
 const isLocalNetworkOrigin = (origin) => {
@@ -126,13 +132,13 @@ app.get('/health', async (req, res) => {
     health.status = 'degraded';
   }
 
-  res.json({ success: true, message: 'TableServe Backend API is running', data: health });
+  res.json({ success: true, message: 'Tableserves Backend API is running', data: health });
 });
 
 app.get('/test', (req, res) => {
   res.json({
     success: true,
-    message: 'TableServe API is working!',
+    message: 'Tableserves API is working!',
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV || 'development'
   });
@@ -201,7 +207,7 @@ mounted.forEach(({ name, path }) => logger.info(`  ✓ ${path} (${name})`));
 app.get('/api', (req, res) => {
   res.json({
     success: true,
-    message: 'TableServe API v1',
+    message: 'Tableserves API v1',
     data: {
       version: '1.0.0',
       environment: process.env.NODE_ENV || 'development',
@@ -226,7 +232,7 @@ app.use('/api/*', (req, res) => {
 app.get('/', (req, res) => {
   res.json({
     success: true,
-    message: 'TableServe Backend API',
+    message: 'Tableserves Backend API',
     data: {
       version: '1.0.0',
       status: 'online',
@@ -257,7 +263,7 @@ app.use((error, req, res, next) => {
 // Server startup
 const startServer = async () => {
   try {
-    logger.info('Starting TableServe Backend...');
+    logger.info('Starting Tableserves Backend...');
     logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
 
     // Database

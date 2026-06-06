@@ -378,7 +378,7 @@ const CustomerReceipt = React.forwardRef(({ orderDetails }, ref) => {
         <p className="font-bold uppercase tracking-wider text-[13px] mt-4 mb-2">Thank You!</p>
         <p className="text-gray-600">Please visit us again</p>
         <div className="text-[10px] text-gray-400">
-          Powered by <span className="font-serif italic font-bold text-accent">TableServes</span>
+          Powered by <span className="font-serif italic font-bold text-accent">Tableserves</span>
         </div>
       </div>
     </div>

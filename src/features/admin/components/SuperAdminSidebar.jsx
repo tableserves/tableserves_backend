@@ -269,7 +269,7 @@ const SuperAdminSidebar = ({ sidebarOpen, setSidebarOpen, isMobile }) => {
           >
             <div className="text-center">
               <p className="text-xs font-semibold text-theme-text-secondary tracking-wider font-raleway uppercase">
-                TableServes
+                Tableserves
               </p>
               <p className="text-[10px] text-theme-text-tertiary font-raleway mt-0.5">
                 Super Admin System

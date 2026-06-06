@@ -146,7 +146,7 @@ const CustomerReviews = () => {
             </div>
             <h3 className="text-2xl font-fredoka text-primary mb-4">Be the First to Review!</h3>
             <p className="text-gray-600 font-raleway text-lg">
-              We're excited to hear about your TableServe experience. Your feedback helps us improve and serve you better.
+              We're excited to hear about your Tableserves experience. Your feedback helps us improve and serve you better.
             </p>
           </div>
         </div>
@@ -162,7 +162,7 @@ const CustomerReviews = () => {
         {/* Header Section */}
         <div className="text-center mb-12">
           <h2 className="text-6xl font-fredoka text-accent mb-4">What Our Customers Say</h2>
-          <p className="text-gray-600 mb-8">Hear from diners who have experienced TableServe</p>
+          <p className="text-gray-600 mb-8">Hear from diners who have experienced Tableserves</p>
 
           {/* Average Rating Display */}
           <div className="flex flex-col items-center gap-3 mb-6">
@@ -209,7 +209,7 @@ const CustomerReviews = () => {
                     {/* Feedback Text */}
                     <div className="mb-4">
                       <p className="font-raleway text-gray-700 leading-relaxed italic text-base">
-                        "{review.serviceFeedback || 'Great experience with TableServe!'}"
+                        "{review.serviceFeedback || 'Great experience with Tableserves!'}"
                       </p>
                     </div>
 

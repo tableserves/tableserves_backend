@@ -50,7 +50,7 @@ const Navbar = () => {
         {/* Logo */}
         <div className="text-xl flex items-center md:text-2xl text-accent font-cinzel font-semibold">
           <img src={logo} alt="Logo" className="w-12 h-12" />
-          <Link to="/">TableServes</Link>
+          <Link to="/">Tableserves</Link>
         </div>
 
         {/* Desktop Links */}

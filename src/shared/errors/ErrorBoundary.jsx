@@ -333,7 +333,7 @@ function handleRecoveryAction(action, onRetry, onReload) {
       break;
     case 'CONTACT_SUPPORT':
       // Open support contact
-      window.open('mailto:support@tableserve.com', '_blank');
+      window.open('mailto:support@tableserves.com', '_blank');
       break;
     case 'CHECK_CONNECTION':
       // Open network settings or show network info

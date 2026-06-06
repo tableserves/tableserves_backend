@@ -1,5 +1,5 @@
 /**
- * Environment Configuration for TableServe Application
+ * Environment Configuration for Tableserves Application
  * 
  * This module provides environment-aware configuration for features,
  * debug tools, and development utilities.
@@ -80,9 +80,9 @@ const EnvironmentConfig = {
     // Use mock API in development
     useMockApi: isDevelopment || isTest,
     
-    // API base URL — backend runs on :8080 (see backend/.env PORT)
+    // API base URL — production targets api.tableserves.com, development uses local backend
     baseUrl: isProduction
-      ? import.meta.env.VITE_API_BASE_URL || '/api'
+      ? import.meta.env.VITE_API_BASE_URL || 'https://api.tableserves.com/api/v1'
       : import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api/v1',
     
     // Request timeout

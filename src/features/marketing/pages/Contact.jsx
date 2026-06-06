@@ -30,7 +30,7 @@ const Contact = () => {
         <div className="text-center mb-12 md:mb-16" data-aos="fade-down">
           <h1 className="text-4xl md:text-5xl font-fredoka text-accent mb-4">Get in Touch</h1>
           <p className="text-base md:text-lg font-raleway max-w-3xl mx-auto">
-            Have a question, need support, or want to discuss how TableServe can transform your restaurant? We're here to help. Send us a message, and we'll get back to you as soon as possible.
+            Have a question, need support, or want to discuss how Tableserves can transform your restaurant? We're here to help. Send us a message, and we'll get back to you as soon as possible.
           </p>
         </div>
 
@@ -202,7 +202,7 @@ const Contact = () => {
             <div className="bg-white/5 p-6 rounded-xl" data-aos="fade-up" data-aos-delay="100">
               <div className="flex items-start gap-3 mb-3">
                 <FaQuestionCircle className="text-accent text-lg mt-1 flex-shrink-0" />
-                <h3 className="font-fredoka text-lg text-accent">How quickly can I set up TableServes?</h3>
+                <h3 className="font-fredoka text-lg text-accent">How quickly can I set up Tableserves?</h3>
               </div>
               <p className="font-raleway text-sm pl-6">
                 Most restaurants can be up and running within 24 hours. Our team provides full setup assistance and training.

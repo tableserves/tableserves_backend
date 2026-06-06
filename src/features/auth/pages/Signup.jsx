@@ -350,7 +350,7 @@ export default function Signup() {
                 </div>
                 <h1 className="text-4xl xl:text-4xl font-fredoka mb-4">Welcome to</h1>
                 <h2 className="text-5xl xl:text-6xl font-cinzel font-semibold bg-gradient-to-r from-white to-orange-100 bg-clip-text text-transparent mb-8">
-                  TableServes
+                  Tableserves
                 </h2>
                 <p className="text-lg xl:text-xl text-orange-100 font-raleway leading-relaxed">
                   Transform your restaurant with our revolutionary QR-based ordering platform. Join thousands of successful businesses worldwide.

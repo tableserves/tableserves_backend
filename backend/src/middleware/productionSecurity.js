@@ -346,7 +346,7 @@ const corsConfig = {
       }
 
       // Common production domains
-      allowedOrigins.push('https://tableserve.app', 'https://admin.tableserve.app', 'https://api.tableserve.app');
+      allowedOrigins.push('https://tableserves.com', 'https://www.tableserves.com', 'https://api.tableserves.com');
     } else {
       // Development origins
       allowedOrigins.push(

@@ -172,7 +172,7 @@ class PaymentService {
         key: orderData.key,
         amount: orderData.amount, // Amount already in paise from backend
         currency: orderData.currency || 'INR',
-        name: 'TableServe',
+        name: 'Tableserves',
         description: `Upgrade to ${orderData.plan?.name || 'Selected'} Plan`,
         order_id: orderData.orderId,
         receipt: orderData.receipt,

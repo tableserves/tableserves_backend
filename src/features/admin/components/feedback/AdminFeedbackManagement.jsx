@@ -126,9 +126,9 @@ const AdminFeedbackManagement = () => {
           <div className="absolute top-0 right-0 w-64 h-64 bg-amber-400/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3 pointer-events-none"></div>
           <div className="relative z-10">
             <h1 className="text-2xl md:text-3xl font-fredoka text-theme-text-primary mb-1 flex items-center">
-              <FaStar className="mr-3 text-amber-400" /> TableServe App Reviews
+              <FaStar className="mr-3 text-amber-400" /> Tableserves App Reviews
             </h1>
-            <p className="text-theme-text-secondary font-raleway">Monitor customer feedback and ratings for the TableServe app experience.</p>
+            <p className="text-theme-text-secondary font-raleway">Monitor customer feedback and ratings for the Tableserves app experience.</p>
           </div>
           <button
             onClick={() => loadFeedbackData(true)}
@@ -341,7 +341,7 @@ const AdminFeedbackManagement = () => {
                         <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                           <path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zM14 9a1 1 0 00-1 1v6a1 1 0 001 1h2a1 1 0 001-1v-6a1 1 0 00-1-1h-2z" />
                         </svg>
-                        TableServe App Experience
+                        Tableserves App Experience
                       </h3>
                       <div className="bg-gradient-to-br from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 border border-blue-200 dark:border-blue-800 p-6 rounded-xl text-center">
                         <div className="flex justify-center space-x-1 mb-3">

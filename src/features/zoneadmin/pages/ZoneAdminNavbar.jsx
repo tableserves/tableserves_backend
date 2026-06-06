@@ -138,7 +138,7 @@ const ZoneAdminNavbar = ({ sidebarOpen, setSidebarOpen, isMobile }) => {
         {/* Center: Branding */}
         <div className="flex items-center font-cinzel font-bold text-xl sm:text-2xl text-theme-accent-primary">
           <img src={logo} alt="logo" className="h-8 w-8 sm:h-10 sm:w-10 mr-2" />
-          <span className="hidden sm:inline">TableServes</span>
+          <span className="hidden sm:inline">Tableserves</span>
         </div>
 
         {/* Right Section: Tools and Profile */}

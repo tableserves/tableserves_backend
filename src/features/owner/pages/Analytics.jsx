@@ -268,7 +268,7 @@ const Analytics = () => {
     workbook.Props = {
       Title: `Revenue Report - ${timeRange}`,
       Subject: 'Financial Analytics',
-      Author: 'TableServe',
+      Author: 'Tableserves',
       CreatedDate: new Date()
     };
 

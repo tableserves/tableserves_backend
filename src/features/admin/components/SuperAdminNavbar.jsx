@@ -64,9 +64,9 @@ const SuperAdminNavbar = ({ sidebarOpen, setSidebarOpen, isMobile }) => {
             animate={{ opacity: 1 }}
             className="flex items-center space-x-2"
           >
-            <img src={logo} alt='TableServes Logo' className='h-8 w-8 sm:h-10 sm:w-10' />
+            <img src={logo} alt='Tableserves Logo' className='h-8 w-8 sm:h-10 sm:w-10' />
             <h1 className="text-lg sm:text-xl font-cinzel font-semibold text-theme-accent-primary hidden sm:block">
-              TableServes
+              Tableserves
             </h1>
           </motion.div>
         </div>

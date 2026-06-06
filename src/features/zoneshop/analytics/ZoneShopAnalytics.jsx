@@ -250,7 +250,7 @@ const ZoneShopAnalytics = () => {
     workbook.Props = {
       Title: `Shop Revenue Report - ${timeRange}`,
       Subject: 'Financial Analytics',
-      Author: 'TableServe',
+      Author: 'Tableserves',
       CreatedDate: new Date()
     };
     const filename = `Shop_Revenue_${timeRange}_${new Date().toISOString().split('T')[0]}.xlsx`;

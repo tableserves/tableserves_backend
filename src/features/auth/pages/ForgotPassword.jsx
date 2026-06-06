@@ -50,7 +50,7 @@ const ForgotPassword = () => {
         <div className="text-center mb-8">
           <h1 className="text-3xl font-cinzel font-semibold text-accent mb-2 -ml-6">
             <img src="/logo.svg" alt="Logo" className="inline-block h-20 w-20" />
-            TableServes
+            Tableserves
           </h1>
           <p className="text-primary-bg font-raleway">Forgot Password</p>
         </div>

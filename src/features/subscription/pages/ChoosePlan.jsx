@@ -97,7 +97,7 @@ export default function ChoosePlan() {
             transition={{ duration: 0.6, delay: 0.2 }}
             className="text-xl md:text-2xl font-raleway text-white/90 max-w-3xl mx-auto"
           >
-            Unlock the full potential of TableServe with plans designed for every business size
+            Unlock the full potential of Tableserves with plans designed for every business size
           </motion.p>
         </div>
       </div>
@@ -152,7 +152,7 @@ export default function ChoosePlan() {
                     Free Starter Plan
                   </h2>
                   <p className="text-theme-text-secondary text-lg mb-6 max-w-2xl">
-                    Perfect to get started and explore TableServe's basic features
+                    Perfect to get started and explore Tableserves' basic features
                   </p>
                   <div className="flex flex-wrap justify-center lg:justify-start gap-4 mb-6">
                     <div className="flex items-center space-x-2 text-theme-text-secondary">
@@ -404,7 +404,7 @@ export default function ChoosePlan() {
                       <div className="flex items-center gap-4 text-purple-700 bg-purple-50 p-4 rounded-xl border border-purple-100">
                         <FaEnvelope className="text-purple-500 flex-shrink-0 text-xl" />
                         <div>
-                          <div className="font-raleway font-bold text-lg">admin@tableserve.com</div>
+                          <div className="font-raleway font-bold text-lg">admin@tableserves.com</div>
                           <div className="text-purple-600 text-sm">Email support</div>
                         </div>
                       </div>
@@ -483,7 +483,7 @@ export default function ChoosePlan() {
                       <div className="flex items-center gap-4 text-purple-700 bg-purple-50 p-4 rounded-xl border border-purple-100">
                         <FaEnvelope className="text-purple-500 flex-shrink-0 text-xl" />
                         <div>
-                          <div className="font-raleway font-bold text-lg">admin@tableserve.com</div>
+                          <div className="font-raleway font-bold text-lg">admin@tableserves.com</div>
                           <div className="text-purple-600 text-sm">Email support</div>
                         </div>
                       </div>

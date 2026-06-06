@@ -154,7 +154,7 @@ if (storedInfo.orderNumber && storedInfo.customerPhone) {
     // Create a default order object if currentOrder is null
     const orderForReceipt = currentOrder || {
       orderId: `TS${Date.now()}`,
-      restaurantName: 'TableServe Restaurant',
+      restaurantName: 'Tableserves Restaurant',
       items: [],
       subtotal: 0,
       taxes: 0,
@@ -166,7 +166,7 @@ if (storedInfo.orderNumber && storedInfo.customerPhone) {
 
     // Use a short timeout to ensure the component is rendered
     setTimeout(() => {
-      downloadPdf(receiptRef.current, `TableServe_Receipt_${orderForReceipt.orderId || 'Order'}.pdf`);
+      downloadPdf(receiptRef.current, `Tableserves_Receipt_${orderForReceipt.orderId || 'Order'}.pdf`);
     }, 100);
   };
 
@@ -214,7 +214,7 @@ if (storedInfo.orderNumber && storedInfo.customerPhone) {
             ref={receiptRef}
             orderDetails={currentOrder || {
               orderNumber: `TS${Date.now()}`,
-              restaurantName: 'TableServe Restaurant',
+              restaurantName: 'Tableserves Restaurant',
               items: [],
               pricing: {
                 subtotal: 0,

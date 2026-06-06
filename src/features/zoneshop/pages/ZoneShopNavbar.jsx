@@ -221,7 +221,7 @@ const ZoneShopNavbar = ({ sidebarOpen, setSidebarOpen, isMobile }) => {
         {/* Center - Branding */}
         <div className="flex items-center font-cinzel font-semibold text-2xl text-accent ml-8">
           <img src={logo} alt='logo' className='h-10 w-10'/>
-          <p className=''>TableServes</p>
+          <p className=''>Tableserves</p>
         </div>
 
         {/* Right Section */}

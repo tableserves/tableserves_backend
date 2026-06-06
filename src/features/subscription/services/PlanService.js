@@ -131,7 +131,7 @@ class PlanService {
       qrCustomization: 'QR Code Customization',
       analytics: 'Analytics & Reports',
       modifiers: 'Menu Item Modifiers',
-      watermark: 'No TableServe Watermark',
+      watermark: 'No Tableserves Watermark',
       vendorManagement: 'Vendor Management',
       prioritySupport: 'Priority Support',
       premiumBranding: 'Premium Branding',

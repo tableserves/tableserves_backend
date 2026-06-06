@@ -179,7 +179,7 @@ export default function PricingPage() {
                   <FaCheck className="text-green-600 text-xs" />
                 </div>
               )}
-              <span className={plan.features?.watermark ? 'text-gray-500' : 'text-gray-700'}>TableServes Watermark</span>
+              <span className={plan.features?.watermark ? 'text-gray-500' : 'text-gray-700'}>Tableserves Watermark</span>
             </li>
           </ul>
         </div>

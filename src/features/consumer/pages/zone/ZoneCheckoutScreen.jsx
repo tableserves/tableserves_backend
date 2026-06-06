@@ -240,7 +240,7 @@ const ZoneCheckoutScreen = () => {
               <div className="absolute top-0 right-0 w-24 h-24 bg-accent/5 rounded-full -translate-y-12 translate-x-12 pointer-events-none" />
               <div className="flex items-center gap-5 relative z-10">
                 <div className="w-10 h-10 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center flex-shrink-0 shadow-sm">
-                  <img src={logo} alt="TableServe Logo" className="w-12 h-12 object-contain opacity-90" />
+                  <img src={logo} alt="Tableserves Logo" className="w-12 h-12 object-contain opacity-90" />
                 </div>
                 <div className="flex flex-col min-w-0">
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Serving at</p>

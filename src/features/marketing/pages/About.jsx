@@ -10,9 +10,9 @@ const About = () => (
       {/* Customer Reviews Section */}
       <CustomerReviews />
       <div className="text-center mb-16" data-aos="fade-down">
-        <h1 className="text-5xl md:text-5xl font-fredoka text-accent mb-4">About TableServes</h1>
+        <h1 className="text-5xl md:text-5xl font-fredoka text-accent mb-4">About Tableserves</h1>
         <p className="text-lg font-raleway max-w-4xl mx-auto">
-          Founded on the principle of innovation, TableServes is dedicated to transforming the restaurant industry. We believe that technology can bridge the gap between restaurants and their customers, creating a more connected, efficient, and enjoyable dining ecosystem for everyone.
+          Founded on the principle of innovation, Tableserves is dedicated to transforming the restaurant industry. We believe that technology can bridge the gap between restaurants and their customers, creating a more connected, efficient, and enjoyable dining ecosystem for everyone.
         </p>
       </div>
 
@@ -76,7 +76,7 @@ const About = () => (
         <h2 className="text-4xl font-fredoka text-accent text-center mb-8">Our Story</h2>
         <div className="max-w-4xl mx-auto">
           <p className="font-raleway text-lg mb-6">
-            TableServes was born from a simple observation: the restaurant industry needed a digital transformation that was both powerful and accessible. Our founders, passionate about technology and hospitality, recognized that most solutions were either too complex for small businesses or too limited for growing enterprises.
+            Tableserves was born from a simple observation: the restaurant industry needed a digital transformation that was both powerful and accessible. Our founders, passionate about technology and hospitality, recognized that most solutions were either too complex for small businesses or too limited for growing enterprises.
           </p>
           <p className="font-raleway text-lg mb-6">
             Starting in 2023, we set out to create a platform that would democratize restaurant technology. We wanted to give every restaurant owner, from a single location to multi-chain operations, access to the same level of sophisticated tools that were previously only available to large corporations.
@@ -87,7 +87,7 @@ const About = () => (
       {/* Team Values */}
       <div className="text-center mb-20">
         <h2 className="text-4xl font-fredoka text-accent mb-8" data-aos="fade-up">
-          Why Choose TableServes?
+          Why Choose Tableserves?
         </h2>
         <div className="flex flex-col md:flex-row items-center gap-12 max-w-4xl mx-auto">
           <div className="text-left flex flex-col gap-4" data-aos="fade-right">

@@ -289,20 +289,20 @@ class EmailOTPService {
 
       // Enhanced mail options for production
       const mailOptions = {
-        from: process.env.EMAIL_FROM || process.env.SMTP_USER || 'tableserve@example.com',
+        from: process.env.EMAIL_FROM || process.env.SMTP_USER || 'tableserves@example.com',
         to: email,
         subject: emailContent.subject,
         html: emailContent.html,
         text: emailContent.text,
         // Production email headers
         headers: {
-          'X-Mailer': 'TableServe',
+          'X-Mailer': 'Tableserves',
           'X-Priority': '1',
           'X-MSMail-Priority': 'High',
           'Importance': 'high'
         },
         // Email tracking (optional)
-        messageId: `tableserve-${Date.now()}-${Math.random().toString(36).substring(2, 11)}@tableserve.com`
+        messageId: `tableserves-${Date.now()}-${Math.random().toString(36).substring(2, 11)}@tableserves.com`
       };
 
       const result = await this.transporter.sendMail(mailOptions);
@@ -357,17 +357,17 @@ class EmailOTPService {
   generateEmailContent(otp, purpose) {
     const templates = {
       profile_update: {
-        subject: 'TableServe - Profile Update Verification',
+        subject: 'Tableserves - Profile Update Verification',
         title: 'Verify Your Profile Update',
         message: 'You are updating your profile information. Please use the following OTP to confirm this action:'
       },
       verification: {
-        subject: 'TableServe - Email Verification',
+        subject: 'Tableserves - Email Verification',
         title: 'Verify Your Email',
         message: 'Please use the following OTP to verify your email address:'
       },
       security: {
-        subject: 'TableServe - Security Verification',
+        subject: 'Tableserves - Security Verification',
         title: 'Security Verification Required',
         message: 'For security purposes, please verify your identity with the following OTP:'
       }
@@ -396,7 +396,7 @@ class EmailOTPService {
       <body>
         <div class="container">
           <div class="header">
-            <h1>🍽️ TableServe</h1>
+            <h1>🍽️ Tableserves</h1>
             <h2>${template.title}</h2>
           </div>
           <div class="content">
@@ -421,7 +421,7 @@ class EmailOTPService {
             <p>If you have any questions or need assistance, please contact our support team.</p>
             
             <div class="footer">
-              <p>© 2024 TableServe. All rights reserved.</p>
+              <p>© 2024 Tableserves. All rights reserved.</p>
               <p>This is an automated email, please do not reply.</p>
             </div>
           </div>
@@ -441,7 +441,7 @@ class EmailOTPService {
       Never share this code with anyone.
       If you didn't request this, please ignore this email.
       
-      © 2024 TableServe. All rights reserved.
+      © 2024 Tableserves. All rights reserved.
     `;
 
     return {
